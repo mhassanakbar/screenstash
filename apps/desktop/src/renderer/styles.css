@@ -1,0 +1,16 @@
+body {
+  background: #101419;
+  color: #eaf0f5;
+  font-family: system-ui, sans-serif;
+  margin: 0;
+}
+main {
+  padding: 64px;
+}
+h1 {
+  font-size: 48px;
+}
+p {
+  color: #b9c5d0;
+  line-height: 1.6;
+}

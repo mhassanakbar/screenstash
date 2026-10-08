@@ -1,0 +1,10 @@
+node_modules
+pnpm-lock.yaml
+.next
+.vite
+out
+dist
+.turbo
+**/next-env.d.ts
+screenstash-spec.md
+screenstash-implementation.md

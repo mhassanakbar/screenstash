@@ -1,0 +1,23 @@
+{
+  "name": "@screenstash/api",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsup src/index.ts src/server.ts --format esm --platform node --target node22 --sourcemap --clean",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "start": "node dist/server.js"
+  },
+  "dependencies": {
+    "@screenstash/shared": "workspace:*",
+    "@screenstash/db": "workspace:*",
+    "express": "5.2.1"
+  },
+  "devDependencies": {
+    "@types/express": "5.0.6",
+    "tsx": "4.23.15",
+    "tsup": "8.5.1"
+  }
+}

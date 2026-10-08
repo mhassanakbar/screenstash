@@ -1,0 +1,32 @@
+{
+  "name": "screenstash",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "pnpm@10.34.6",
+  "engines": {
+    "node": ">=22.13.0 <23"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "lint": "eslint scripts eslint.config.mjs prettier.config.mjs && turbo run lint",
+    "check": "pnpm lint && pnpm typecheck && pnpm build",
+    "format:check": "prettier --check .",
+    "format": "prettier --write .",
+    "smoke": "node scripts/smoke.mjs",
+    "smoke:desktop": "electron scripts/desktop-smoke.cjs",
+    "desktop:make": "pnpm --filter @screenstash/desktop make",
+    "db:generate": "pnpm --filter @screenstash/db generate",
+    "db:migrate": "pnpm --filter @screenstash/db migrate"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "22.19.15",
+    "eslint": "10.12.0",
+    "prettier": "3.9.9",
+    "turbo": "2.11.7",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.71.1"
+  }
+}
