@@ -11,13 +11,20 @@
     "start": "node dist/server.js"
   },
   "dependencies": {
-    "@screenstash/shared": "workspace:*",
+    "@aws-sdk/client-s3": "3.1148.0",
+    "@aws-sdk/s3-request-presigner": "3.1148.0",
+    "@clerk/express": "2.1.77",
     "@screenstash/db": "workspace:*",
-    "express": "5.2.1"
+    "@screenstash/shared": "workspace:*",
+    "@vercel/functions": "3.9.11",
+    "dotenv": "18.0.6",
+    "express": "5.2.1",
+    "sharp": "0.35.5",
+    "zod": "4.6.5"
   },
   "devDependencies": {
     "@types/express": "5.0.6",
-    "tsx": "4.23.15",
-    "tsup": "8.5.1"
+    "tsup": "8.5.1",
+    "tsx": "4.23.15"
   }
 }

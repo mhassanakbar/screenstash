@@ -1,8 +1,73 @@
 # ScreenStash — MVP Implementation Document
 
-Version 1.4 · 8 October 2026 · Based on [screenstash-spec.md](./screenstash-spec.md), specification v0.5
+Version 1.5 · 9 October 2026 · Based on [screenstash-spec.md](./screenstash-spec.md), specification v0.5
 
-**Status:** Feature implementation plan. The repository now includes the six-package foundation, placeholder application screens, and build/smoke checks. Authentication, capture, storage, search, and sharing features described below have not been implemented.
+**Status:** Implementation paused at the user's request. Authentication, uploads, private media, gallery/detail/deletion, and the search/tag API are implemented. Search, rename, tag and date controls compile but still need browser acceptance checks. Public sharing and desktop capture/OCR/queue features remain pending. The architecture below describes the intended complete MVP; the checkpoint records the actual current state.
+
+## Implementation checkpoint — 9 October 2026
+
+Resume from this checkpoint and [the approved server/web phase plan](docs/server-web-implementation-plan.md). The user approved implementation; routine fixes and the remaining phases do not require another planning approval. Do not deploy or publish as part of resuming local implementation.
+
+### Current implementation
+
+| Phase | Current state |
+| --- | --- |
+| 1. Configuration, contracts and database | Implemented. Local environment loading, sanitized errors/request IDs, health/readiness, Zod contracts, typed authenticated client, Drizzle schema/migration, database adapter, Vitest and Playwright harnesses. |
+| 2. Clerk and protected web shell | Implemented. Clerk Next.js/Express SDKs, SignIn/SignUp/UserButton/UserProfile, protected vault layouts, identity mapping, `/api/me`, idempotent device registration, signed deletion webhooks, tombstones, account-scoped query caches. Real development sign-in/sign-out and two distinct owners verified. Real webhook delivery is still a configuration gate. |
+| 3. Uploads, private media and cleanup | Core implemented and locally verified against PostgreSQL/R2. Presigned staging PUT, immutable metadata, renewal, PNG/checksum/dimension verification, retry-safe finalization, unique final object per processing attempt, durable cleanup jobs/leases, account quotas, shared upload throttles, cookie/bearer-authorized GET/HEAD/download, protected maintenance endpoint. Operational follow-ups below remain. |
+| 4. Gallery, detail and deletion | Implemented and basic browser flow verified. Responsive gallery, loading/error/empty states, pagination, foreground polling, accessible detail dialog, OCR text, original download and confirmed permanent deletion. Owner isolation and tied-date pagination tested in PostgreSQL. |
+| 5. Rename, tags, dates and search | API implemented and integration-tested. Weighted `simple` full-text search for title/tags/OCR, normalized owner-scoped tags, transactional updates, AND-tag and half-open UTC date filters, rank/date/ID pagination and filter-bound cursors. Debounced URL-preserved filters and editing controls are written and compile; browser acceptance for these latest controls has not run. |
+| 6. Public shares and social metadata | Not started. Hash-only share tokens, preview generation, public Express lookup/media routes, Next.js `/s/[token]` pages/metadata, replacement/revocation and sharing UI remain. |
+| 7. Operations and release verification | In progress. CI has unit tests and a PostgreSQL service integration job. Live Vercel deployment, function limits/streaming, cron, backup/restore, external webhook delivery and Discord/X preview validation remain release gates. |
+
+The Electron foundation is preserved. Desktop Clerk integration, capture, OCR, durable queue and uploader have not been implemented in this server/web stage. No browser upload product flow was added; acceptance tests upload synthetic fixtures through the desktop-facing API.
+
+### Verification already completed
+
+| Check | Last successful evidence |
+| --- | --- |
+| `pnpm test` | 23 contract, environment, API/client and embedded PostgreSQL tests. This passed before the latest search/UI changes; rerun during resume. |
+| `pnpm test:integration` | 21 real local PostgreSQL tests. Covers schema constraints, transactions/leases, concurrent account provisioning, device identity, signed/forged/duplicate deletion events, Clerk JWT expiry/wrong-key/authorized-party rejection, upload concurrency/immutable bytes, PNG rejection, quotas, pagination, ownership, cleanup recovery, weighted search and tag/date filters. |
+| `pnpm test:storage` | One live R2 test passed: direct signed PUT, finalization/idempotency, checksum match and staging overwrite unable to change the verified original. Disposable storage fixtures were removed. |
+| `pnpm test:e2e` | Two production-runtime Playwright tests passed using real development Clerk and R2. Sign-in/sign-out, two distinct owners, cookie-only mutation denial, upload, gallery after reload, detail/OCR, Escape dismissal, confirmed deletion and denied retry. A 20 MiB PNG streamed with matching checksum through the Next.js rewrite and direct Express download; HEAD length was verified. These checks preceded the latest search/edit UI additions. |
+| `pnpm typecheck` | Most recent run passed all six packages and test/config TypeScript checks, including the latest search/edit/filter UI; production Next.js build also passed. |
+| Lint/format/runtime smoke | Earlier foundation/auth checks passed. The later lint run found a control-character regex rule in filename sanitization; that code was corrected, but the complete final lint/format/smoke sweep has not run since subsequent changes. |
+
+The 20 MiB fixture used a small valid PNG with trailing padding to test transfer size. It does **not** establish worst-case 40-million-pixel Sharp memory/runtime or deployed Vercel streaming performance. Clerk negative-token tests use the official middleware with an explicit test verification key; separate browser tests use actual Clerk sessions. No production auth bypass was added.
+
+### Database and service state
+
+- The user supplied local `DATABASE_URL` and `DIRECT_DATABASE_URL` in ignored `apps/api/.env`. The development database was inspected as empty before applying `packages/db/migrations/0000_initial_vault.sql`; that migration succeeded. Do not reset it or apply the initial SQL manually again.
+- `TEST_DATABASE_URL` is absent by the user's choice. Tests automatically create/drop isolated databases on the configured **local** PostgreSQL instance; this worked. The local role needs `CREATEDB`. Remote runtime/direct URLs are refused for automatic creation.
+- When a distinct disposable `TEST_DATABASE_URL` is supplied, the harness creates/removes a unique test schema and redirects migration schema qualifiers there. That newer branch compiles but still needs an explicit verification run, including the CI path.
+- Clerk development API/web credentials and R2 bucket credentials worked in live checks. Environment files remain ignored; no connection strings or secret values are stored in this document.
+- `CLERK_WEBHOOK_SIGNING_SECRET` and `CRON_SECRET` were initially absent and have not been generated/configured by this work. Their handlers return 503 while unconfigured. Signed webhook processing is tested locally; provider delivery is unverified.
+- Browser tests use `http://localhost:3000`, matching `WEB_ORIGIN`; the test Next.js listener also binds to `localhost`. The API listens on `127.0.0.1:4000`. Mixing localhost/127.0.0.1 for the web listener caused a Clerk proxy loop and was corrected. Production middleware explicitly sets local `/sign-in` and `/sign-up` paths.
+- Browser tests create disposable Clerk test users and synthetic screenshots; the latest teardown tombstones their local owners, removes their R2 fixture keys, and deletes provider users. Earlier runs predated that complete teardown. Inspect synthetic fixture leftovers before cleanup; do not touch other users' data.
+- No deployment, publishing or Git commit was performed. Changes include new untracked source/tests/migration files; preserve the working tree and all pre-existing user changes.
+
+### Start here tomorrow
+
+1. Read this checkpoint and inspect the working tree. Run `pnpm test`, `pnpm test:integration`, `pnpm lint`, `pnpm typecheck`, scoped server/web production builds and the runtime smoke check. Format the latest UI/test files. Fix genuine regressions before extending features.
+2. Extend `tests/e2e/auth.spec.ts` for rename, tag creation/assignment, OCR/title/tag search, persisted filters after reload, date controls and mobile/keyboard behavior. The attempted patch adding these assertions did **not** apply before the pause; the current test still exercises the earlier gallery flow. Run `pnpm test:e2e` and complete the phase 5 gate.
+3. Review the latest UI/API details: the dialog title currently uses the originally selected gallery item after rename; tag loading failures need clear feedback; filtered empty results still use the account-connected heading. Batch gallery tag loading instead of one query per image. Repeated finalization currently returns an empty tag array even if the image was subsequently tagged; align that response with normal detail DTOs.
+4. Close phase 3 operational gaps: add the standalone authenticated development fixture uploader, generate/configure the maintenance secret without displaying it, document quotas, verify the disposable `TEST_DATABASE_URL` branch and maintenance authorization. Add shared processing admission limits across function instances; current per-process Sharp capacity and per-session leases are insufficient to claim that deployment-level gate is complete. Add remaining rate limits for provisioning/tag/share operations.
+5. Harden cleanup verification around interrupted writes, account deletion during finalization, active-object protection, lease expiry, late staging PUTs and repeated worker invocations. Ensure browser teardown still deletes Clerk test accounts when a database/R2 cleanup step fails. Explicitly bound Vercel function duration and document private bucket/lifecycle setup.
+6. Implement phase 6 public sharing and its acceptance tests, then complete phase 7 runbooks and final checks. Preserve hash-only tokens, approved public titles, immutable previews, request-time availability and no-store semantics. Do not claim deployment readiness until real webhook, Vercel streaming/processing and social-preview gates pass.
+
+Useful commands from the workspace root:
+
+```powershell
+npx --yes pnpm@10.34.6 test
+npx --yes pnpm@10.34.6 test:integration
+npx --yes pnpm@10.34.6 test:storage
+npx --yes pnpm@10.34.6 test:e2e
+npx --yes pnpm@10.34.6 lint
+npx --yes pnpm@10.34.6 typecheck
+npx --yes pnpm@10.34.6 smoke
+```
+
+`test:e2e` now builds API/web and dependencies before starting their production servers. Ports 3000/4000 must be free. Chromium is installed. The global pnpm launcher previously failed in the sandbox; the pinned `npx` invocation worked. In Codex, network/local database/browser commands may need the usual sandbox escalation. This pause creates no automation or scheduled continuation.
 
 ## 1. Objective and scope
 

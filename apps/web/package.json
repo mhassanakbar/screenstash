@@ -14,10 +14,20 @@
     "@screenstash/api-client": "workspace:*",
     "next": "16.4.0",
     "react": "19.3.0",
-    "react-dom": "19.3.0"
+    "react-dom": "19.3.0",
+    "@clerk/nextjs": "7.9.13",
+    "@tanstack/react-query": "5.104.1",
+    "tailwindcss": "4.3.3",
+    "@radix-ui/react-dialog": "1.2.0",
+    "@radix-ui/react-slot": "1.4.0",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
+    "tailwind-merge": "3.7.0",
+    "lucide-react": "1.53.0"
   },
   "devDependencies": {
     "@types/react": "19.2.14",
-    "@types/react-dom": "19.2.3"
+    "@types/react-dom": "19.2.3",
+    "@tailwindcss/postcss": "4.3.3"
   }
 }

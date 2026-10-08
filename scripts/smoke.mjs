@@ -107,7 +107,7 @@ try {
     assert.equal((await missing.json()).error.code, 'NOT_FOUND');
   }
   const page = await fetch('http://127.0.0.1:3000');
-  assert.match(await page.text(), /Project foundation/);
+  assert.match(await page.text(), /ScreenStash/);
   console.log(
     'PASS: compiled packages, API, Next.js production page, API/media rewrites, HEAD, and no-store headers.',
   );

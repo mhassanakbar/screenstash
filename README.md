@@ -1,6 +1,6 @@
 # ScreenStash
 
-Project foundation for a Windows screenshot vault. Feature implementation has not started.
+Windows screenshot vault with a Next.js website, Express API, and Electron desktop foundation. Server and web implementation is in progress.
 
 ## Workspace
 
@@ -13,7 +13,7 @@ Project foundation for a Windows screenshot vault. Feature implementation has no
 | `packages/api-client` | Typed HTTP client; session-token provider boundary |
 | `packages/db`         | Drizzle + PostgreSQL adapter and migration tooling |
 
-The current screens are placeholders. The API provides only `GET /api/health` and JSON 404 responses. No accounts, screenshot capture, uploads, database tables, or sharing features are implemented.
+The API includes configuration validation, Clerk ownership/device registration, signed deletion webhooks, verified R2 uploads, private media, gallery/deletion, and search/tag endpoints. The web app includes Clerk UI, gallery/detail/download/delete, and search/edit/filter controls. The latest search controls still need browser acceptance; public sharing and desktop capture remain pending. Work is paused; see the [implementation checkpoint](screenstash-implementation.md#implementation-checkpoint--9-october-2026) to resume.
 
 ## Requirements
 
@@ -32,6 +32,8 @@ pnpm typecheck
 pnpm build
 pnpm smoke
 pnpm smoke:desktop
+pnpm test
+pnpm test:integration
 pnpm format:check
 ```
 
@@ -51,11 +53,17 @@ The API listens on `http://127.0.0.1:4000`. Next.js listens on `http://localhost
 
 ## Environment and services
 
-The placeholder builds require no Clerk, PostgreSQL, or R2 credentials. Copy app-specific `.env.example` files only when configuring those integrations. Never commit secrets.
+Health and infrastructure tests require no provider credentials. The authenticated website requires Clerk keys. Copy app-specific `.env.example` files when configuring integrations. Never commit secrets.
 
-Next.js loads `apps/web/.env.local`. Express, desktop main, and migration tooling currently receive configuration through the process environment; they do not automatically load example files. Public `VITE_*` and `NEXT_PUBLIC_*` values must contain no secrets.
+Next.js loads `apps/web/.env` and `.env.local`. The local Express server and migration tooling load `apps/api/.env` without overriding process variables. Vercel supplies process variables directly. Public `VITE_*` and `NEXT_PUBLIC_*` values must contain no secrets.
 
-Database migration commands require `DIRECT_DATABASE_URL`. The schema is intentionally empty until the build gate passes; do not run migrations against production. `DATABASE_URL` is reserved for the pooled runtime connection.
+Database migration commands require `DIRECT_DATABASE_URL`; use `pnpm db:migrate` on the development database. `DATABASE_URL` is the pooled runtime connection. Never point integration tests at the application database.
+
+`pnpm test:integration` uses a separate disposable `TEST_DATABASE_URL` when supplied. Otherwise it creates and drops an isolated database on a local `DIRECT_DATABASE_URL` instance; the local role needs `CREATEDB`. Automatic creation is refused for remote hosts. `pnpm test` also exercises the migration constraints in embedded PostgreSQL.
+
+Browser verification requires development Clerk keys in the API/web environment files and Chromium (`pnpm exec playwright install chromium`). After building API and web, run `pnpm test:e2e`. It creates disposable Clerk test accounts, checks sign-in, owner isolation and sign-out, then deletes those accounts. Keep `WEB_ORIGIN`, the browser origin, and Clerk redirect configuration aligned at `http://localhost:3000`. Production keys are refused by the browser harness.
+
+Configure the Clerk webhook endpoint at `/api/webhooks/clerk` for `user.deleted`, with `CLERK_WEBHOOK_SIGNING_SECRET`. Until configured, the endpoint returns 503. Signed fixtures validate processing locally; real provider delivery requires a reachable deployment.
 
 ## Deployment foundations
 

@@ -6,3 +6,4 @@ export const healthResponseSchema = z.object({
   service: z.literal('screenstash-api'),
 });
 export type HealthResponse = z.infer<typeof healthResponseSchema>;
+export * from './contracts.js';

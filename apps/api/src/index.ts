@@ -1,21 +1,27 @@
-import express from 'express';
-import { healthResponseSchema } from '@screenstash/shared';
+import { createApp } from './app.js';
+import {
+  loadLocalEnvironment,
+  parseEnvironment,
+} from './config/environment.js';
+import { createDatabase } from '@screenstash/db';
+import { createObjectStore } from './storage/r2.js';
 
-const app = express();
-app.disable('x-powered-by');
-app.use((_req, res, next) => {
-  res.setHeader('Cache-Control', 'no-store');
-  next();
+loadLocalEnvironment();
+const environment = parseEnvironment(process.env);
+const database = environment.DATABASE_URL
+  ? createDatabase(environment.DATABASE_URL)
+  : undefined;
+const store = createObjectStore(environment);
+const app = createApp(environment, {
+  ...(store ? { store } : {}),
+  ...(database ? { database: database.db } : {}),
+  ...(database
+    ? {
+        ready: async () => {
+          await database.pool.query('SELECT 1');
+          return true;
+        },
+      }
+    : {}),
 });
-app.get('/api/health', (_req, res) => {
-  res.json(
-    healthResponseSchema.parse({ status: 'ok', service: 'screenstash-api' }),
-  );
-});
-app.use((_req, res) => {
-  res
-    .status(404)
-    .json({ error: { code: 'NOT_FOUND', message: 'Route not found' } });
-});
-
 export default app;

@@ -2,6 +2,7 @@
   "name": "screenstash",
   "version": "0.0.0",
   "private": true,
+  "type": "module",
   "packageManager": "pnpm@10.34.6",
   "engines": {
     "node": ">=22.13.0 <23"
@@ -9,24 +10,43 @@
   "scripts": {
     "dev": "turbo run dev",
     "build": "turbo run build",
-    "typecheck": "turbo run typecheck",
+    "typecheck": "turbo run typecheck && tsc --project tsconfig.tests.json --noEmit",
     "lint": "eslint scripts eslint.config.mjs prettier.config.mjs && turbo run lint",
     "check": "pnpm lint && pnpm typecheck && pnpm build",
     "format:check": "prettier --check .",
     "format": "prettier --write .",
     "smoke": "node scripts/smoke.mjs",
     "smoke:desktop": "electron scripts/desktop-smoke.cjs",
+    "test": "turbo run build --filter=@screenstash/api... --filter=@screenstash/api-client... --output-logs=errors-only && vitest run",
+    "test:integration": "turbo run build --filter=@screenstash/api... --output-logs=errors-only && vitest run --config vitest.integration.config.ts",
+    "test:e2e": "turbo run build --filter=@screenstash/web... --filter=@screenstash/api... --output-logs=errors-only && playwright test",
+    "test:storage": "turbo run build --filter=@screenstash/api... --output-logs=errors-only && vitest run --config vitest.storage.config.ts",
     "desktop:make": "pnpm --filter @screenstash/desktop make",
     "db:generate": "pnpm --filter @screenstash/db generate",
     "db:migrate": "pnpm --filter @screenstash/db migrate"
   },
   "devDependencies": {
+    "@clerk/testing": "2.2.44",
+    "@clerk/backend": "3.23.1",
+    "svix": "2.8.0",
+    "drizzle-orm": "0.45.4",
+    "@screenstash/shared": "workspace:*",
+    "@screenstash/api-client": "workspace:*",
+    "@screenstash/db": "workspace:*",
+    "pg": "8.16.3",
+    "@types/pg": "8.15.6",
     "@eslint/js": "10.0.1",
     "@types/node": "22.19.15",
+    "@types/supertest": "7.2.1",
+    "@electric-sql/pglite": "0.5.8",
+    "@playwright/test": "1.64.0",
     "eslint": "10.12.0",
     "prettier": "3.9.9",
     "turbo": "2.11.7",
     "typescript": "5.9.3",
-    "typescript-eslint": "8.71.1"
+    "typescript-eslint": "8.71.1",
+    "supertest": "7.3.1",
+    "vitest": "5.0.3",
+    "dotenv": "18.0.6"
   }
 }

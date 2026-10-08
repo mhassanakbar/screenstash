@@ -16,7 +16,8 @@
     "lint": "eslint ."
   },
   "dependencies": {
-    "@screenstash/shared": "workspace:*"
+    "@screenstash/shared": "workspace:*",
+    "zod": "4.6.5"
   },
   "devDependencies": {
     "tsup": "8.5.1"
