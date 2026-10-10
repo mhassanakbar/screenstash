@@ -4,7 +4,11 @@ import { MakerZIP } from '@electron-forge/maker-zip';
 import { VitePlugin } from '@electron-forge/plugin-vite';
 
 const config: ForgeConfig = {
-  packagerConfig: { asar: true, executableName: 'ScreenStash' },
+  packagerConfig: {
+    asar: true,
+    executableName: 'ScreenStash',
+    protocols: [{ name: 'ScreenStash', schemes: ['screenstash'] }],
+  },
   makers: [
     new MakerSquirrel({ name: 'ScreenStash' }),
     new MakerZIP({}, ['win32']),

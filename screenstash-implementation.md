@@ -1,6 +1,6 @@
 # ScreenStash — MVP Implementation Document
 
-Version 1.6 · 10 October 2026 · Based on [screenstash-spec.md](./screenstash-spec.md), specification v0.5
+Version 1.7 · 10 October 2026 · Based on [screenstash-spec.md](./screenstash-spec.md), specification v0.5
 
 **Status:** Server/web features are implemented and verified locally. Clerk authentication, uploads/private media, gallery/deletion, editing/search/filtering and public sharing pass production-mode local acceptance. Deployment readiness remains pending. Desktop authentication/capture/OCR/queue remains a separate stage.
 
@@ -20,15 +20,16 @@ Continued from commit `c5f3609` (`feat: implement authenticated screenshot vault
 | 6. Public shares and social metadata | Implemented and locally verified. Hash-only random tokens, separately approved public titles, immutable stripped JPEG previews, minimal public DTOs, authorized original/preview GET/HEAD, explicit replacement/revocation, Next.js request-time public pages, blocking OG/Twitter metadata, generic unavailable views and sharing UI. Public routes are outside Clerk layouts. |
 | 7. Operations and release verification | Local checks complete. Added runbook, aggregate backlog diagnostics, explicit 120-second function duration, daily maintenance schedule, quotas/rates and a manually dispatched development browser CI workflow. Remote CI execution, deployed limits/streaming/cache behavior, actual webhook delivery, backup/restore and Discord/X previews are pending. |
 
-The Electron foundation still builds and its hidden-window smoke test passes; desktop product features are not implemented by this stage. No browser upload product flow was added.
+The first desktop increment adds the official Clerk Electron bridge/UI, encrypted session persistence, a sender-validated ephemeral token broker, the trusted `screenstash://renderer` asset protocol, and a native display probe. Express explicitly allowlists configured native token origins without relaxing signature/expiry checks. Runtime dependencies are bundled into the main output, fixing the missing `@clerk/electron` module at packaged startup. The offline ASAR bootstrap smoke test, packaged development authentication/restart/sign-out, and a 1920 × 1080 display at 100% scaling have passed. See the [desktop checkpoint](docs/desktop-implementation-plan.md#implementation-checkpoint--10-october-2026) for current evidence and pending hardware/UI gates. Persisted captures, OCR, upload recovery and tray controls remain pending. No browser upload product flow was added.
 
 ### Verification evidence
 
 | Check | Successful local evidence on 10 October |
 | --- | --- |
-| `pnpm test` | 23 unit/contracts/client/API/embedded PostgreSQL tests. |
+| `pnpm test` | 29 unit/contracts/client/API/embedded PostgreSQL tests, including desktop IPC/path/token-broker and native-origin configuration coverage. |
 | `pnpm test:integration` | 32 real PostgreSQL tests, including signed/forged/de-duplicated webhook events, negative Clerk JWT cases, ownership/constraints, search/tag/date pagination, shared admission, maintenance authorization, interrupted writes, account deletion during finalization, protected originals, staging expiry, public privacy/preview generation/replacement/revocation/deletion and orphan recovery. |
 | `pnpm test:storage` | One live R2 test: signed direct PUT, verified finalization, idempotency, checksum and immutable original after staging overwrite. |
+| `pnpm test:desktop` | Packaged Windows development app: real Clerk ticket sign-in, verified API owner/device, ephemeral token brokerage, hidden-renderer renewal after JWT expiry, encrypted restart, sign-out, untrusted-frame rejection and native 1920 × 1080 capture probe at 100% scaling. |
 | `pnpm test:e2e` | Two production-runtime tests using real development Clerk/R2. Rename/tag/search/persisted filters/dates/mobile/focus passed. Public signed-out page, browser/Discord/Twitter initial HTML metadata, JPEG dimensions, 20 MiB original transfer/checksum, GET/HEAD, explicit replacement, revocation and screenshot deletion passed. |
 | `pnpm check` | Lint, type checks including test/config files, and production builds across all six packages passed. |
 | `pnpm format:check` | All matched source, test, configuration and operations documents passed. The specification/implementation document retain their existing formatting exclusion. |
@@ -53,7 +54,7 @@ The padded 20 MiB PNG proves local transfer size, not worst-case 40-million-pixe
 2. Configure the development GitHub environment if remote browser acceptance is wanted; the manual workflow needs development Clerk and dedicated test-bucket R2 secrets.
 3. For a separately authorized deployment, follow the operations runbook: configure both Vercel projects, private bucket/staging lifecycle, matching canonical origins, pooled/direct database connections, maintenance secret and real signed Clerk deletion endpoint.
 4. Complete live release evidence: maximum-size proxy streaming, worst-case/concurrent Sharp processing, warmed revocation, cron execution, webhook delivery, backup/object restore and actual Discord/X previews. Do not claim production readiness until these pass.
-5. Implement the separate desktop stage: Clerk renderer/session persistence, capture/OCR, durable local queue and uploader. Its foundation remains intact.
+5. Continue the approved [desktop implementation plan](docs/desktop-implementation-plan.md): complete remaining phase-1 UI/hardware evidence and implement the durable local repository before capture/OCR, uploader and tray/settings. Current desktop verification commands are `pnpm test:desktop` and `pnpm smoke:desktop`.
 
 ## 1. Objective and scope
 

@@ -155,6 +155,7 @@ describe('Account ownership and deletion', () => {
     const environment = parseEnvironment({
       CLERK_PUBLISHABLE_KEY: `pk_test_${Buffer.from('fixture.clerk.accounts.dev$').toString('base64')}`,
       CLERK_SECRET_KEY: 'sk_test_fixture',
+      DESKTOP_AUTH_ORIGINS: 'screenstash://renderer,http://localhost:5173',
       CLERK_JWT_KEY: pair.publicKey
         .export({ format: 'pem', type: 'spki' })
         .toString(),
@@ -190,9 +191,31 @@ describe('Account ownership and deletion', () => {
       .get('/api/me')
       .set('Authorization', `Bearer ${token()}`);
     expect(accepted.status).toBe(200);
+    for (const azp of ['screenstash://renderer', 'http://localhost:5173']) {
+      const native = await request(app)
+        .get('/api/me')
+        .set('Authorization', `Bearer ${token({ azp })}`);
+      expect(native.status).toBe(200);
+      expect(native.body.clerkUserId).toBe(accepted.body.clerkUserId);
+    }
+    const webOnly = createApp(
+      { ...environment, DESKTOP_AUTH_ORIGINS: [] },
+      { database },
+    );
+    expect(
+      (
+        await request(webOnly)
+          .get('/api/me')
+          .set(
+            'Authorization',
+            `Bearer ${token({ azp: 'screenstash://renderer' })}`,
+          )
+      ).status,
+    ).toBe(401);
     for (const rejected of [
       token({ exp: now - 60 }),
       token({ azp: 'https://foreign.example' }),
+      token({ azp: 'screenstash://foreign' }),
       token({}, other.privateKey),
     ]) {
       const response = await request(app)

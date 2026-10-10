@@ -51,7 +51,10 @@ export function authenticatedRoutes(
         : {}),
       secretKey: environment.CLERK_SECRET_KEY,
       publishableKey: environment.CLERK_PUBLISHABLE_KEY,
-      authorizedParties: [new URL(environment.WEB_ORIGIN).origin],
+      authorizedParties: [
+        new URL(environment.WEB_ORIGIN).origin,
+        ...environment.DESKTOP_AUTH_ORIGINS,
+      ],
     }),
     async (req, res, next) => {
       try {

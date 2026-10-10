@@ -6,6 +6,8 @@ export default defineConfig({
       formats: ['cjs'],
       fileName: () => 'main.cjs',
     },
-    rollupOptions: { external: ['electron', 'electron-squirrel-startup'] },
+    // Forge ships only .vite output. Bundle runtime dependencies so the
+    // packaged app does not depend on the workspace's node_modules directory.
+    rollupOptions: { external: ['electron', '@clerk/electron-passkeys'] },
   },
 });

@@ -49,37 +49,64 @@ const origin = z
       !url.password
     );
   }, 'Expected an HTTP(S) origin');
-const schema = z.object({
-  NODE_ENV: z
-    .enum(['development', 'test', 'production'])
-    .default('development'),
-  PORT: z.coerce.number().int().min(1).max(65535).default(4000),
-  ACCOUNT_STORAGE_BYTES: z.coerce
-    .number()
-    .int()
-    .min(20971520)
-    .max(Number.MAX_SAFE_INTEGER)
-    .default(1073741824),
-  ACCOUNT_PENDING_UPLOADS: z.coerce.number().int().min(1).max(1000).default(25),
-  IMAGE_PROCESSING_GLOBAL_LIMIT: z.coerce
-    .number()
-    .int()
-    .min(1)
-    .max(64)
-    .default(4),
-  DATABASE_URL: optional(databaseUrl),
-  CLERK_PUBLISHABLE_KEY: optional(z.string().min(1)),
-  CLERK_SECRET_KEY: optional(z.string().min(1)),
-  CLERK_JWT_KEY: optional(z.string().min(1)),
-  CLERK_WEBHOOK_SIGNING_SECRET: optional(z.string().min(1)),
-  CRON_SECRET: optional(z.string().min(32)),
-  R2_ACCOUNT_ID: optional(z.string().min(1)),
-  R2_ACCESS_KEY_ID: optional(z.string().min(1)),
-  R2_SECRET_ACCESS_KEY: optional(z.string().min(1)),
-  R2_BUCKET: optional(z.string().min(1)),
-  WEB_ORIGIN: origin.default('http://localhost:3000'),
-  PUBLIC_BASE_URL: origin.default('http://localhost:3000'),
-});
+const schema = z
+  .object({
+    NODE_ENV: z
+      .enum(['development', 'test', 'production'])
+      .default('development'),
+    PORT: z.coerce.number().int().min(1).max(65535).default(4000),
+    ACCOUNT_STORAGE_BYTES: z.coerce
+      .number()
+      .int()
+      .min(20971520)
+      .max(Number.MAX_SAFE_INTEGER)
+      .default(1073741824),
+    ACCOUNT_PENDING_UPLOADS: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(1000)
+      .default(25),
+    IMAGE_PROCESSING_GLOBAL_LIMIT: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .max(64)
+      .default(4),
+    DATABASE_URL: optional(databaseUrl),
+    CLERK_PUBLISHABLE_KEY: optional(z.string().min(1)),
+    CLERK_SECRET_KEY: optional(z.string().min(1)),
+    CLERK_JWT_KEY: optional(z.string().min(1)),
+    CLERK_WEBHOOK_SIGNING_SECRET: optional(z.string().min(1)),
+    CRON_SECRET: optional(z.string().min(32)),
+    R2_ACCOUNT_ID: optional(z.string().min(1)),
+    R2_ACCESS_KEY_ID: optional(z.string().min(1)),
+    R2_SECRET_ACCESS_KEY: optional(z.string().min(1)),
+    R2_BUCKET: optional(z.string().min(1)),
+    WEB_ORIGIN: origin.default('http://localhost:3000'),
+    DESKTOP_AUTH_ORIGINS: z.preprocess(
+      (value) =>
+        typeof value === 'string'
+          ? value
+              .split(',')
+              .map((item) => item.trim())
+              .filter(Boolean)
+          : value,
+      z
+        .array(z.enum(['screenstash://renderer', 'http://localhost:5173']))
+        .default([]),
+    ),
+    PUBLIC_BASE_URL: origin.default('http://localhost:3000'),
+  })
+  .refine(
+    (value) =>
+      value.NODE_ENV !== 'production' ||
+      !value.DESKTOP_AUTH_ORIGINS.includes('http://localhost:5173'),
+    {
+      path: ['DESKTOP_AUTH_ORIGINS'],
+      message: 'Development desktop origins are not permitted in production',
+    },
+  );
 export class ConfigurationError extends Error {
   constructor(public readonly fields: string[]) {
     super(`Invalid configuration: ${fields.join(', ')}`);

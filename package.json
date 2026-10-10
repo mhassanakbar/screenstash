@@ -20,6 +20,7 @@
     "test": "turbo run build --filter=@screenstash/api... --filter=@screenstash/api-client... --output-logs=errors-only && vitest run",
     "test:integration": "turbo run build --filter=@screenstash/api... --output-logs=errors-only && vitest run --config vitest.integration.config.ts",
     "test:e2e": "turbo run build --filter=@screenstash/web... --filter=@screenstash/api... --output-logs=errors-only && playwright test",
+    "test:desktop": "turbo run build --filter=@screenstash/desktop... --filter=@screenstash/api... --output-logs=errors-only && playwright test --config playwright.desktop.config.ts",
     "test:storage": "turbo run build --filter=@screenstash/api... --output-logs=errors-only && vitest run --config vitest.storage.config.ts",
     "fixture:upload": "node scripts/upload-fixture.mjs",
     "configure:maintenance": "node scripts/configure-maintenance-secret.mjs",

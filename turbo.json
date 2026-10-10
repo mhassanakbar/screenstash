@@ -18,7 +18,11 @@
       "env": [
         "EXPRESS_API_ORIGIN",
         "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY",
-        "PUBLIC_BASE_URL"
+        "PUBLIC_BASE_URL",
+        "VITE_API_ORIGIN",
+        "VITE_WEB_ORIGIN",
+        "VITE_CLERK_PUBLISHABLE_KEY",
+        "VITE_CLERK_FRONTEND_API_HOST"
       ]
     },
     "typecheck": {

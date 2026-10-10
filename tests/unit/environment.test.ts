@@ -32,4 +32,33 @@ describe('server configuration', () => {
       'CRON_SECRET',
     );
   });
+  it('only allows explicit desktop origins and excludes development origins in production', () => {
+    expect(
+      parseEnvironment({
+        DESKTOP_AUTH_ORIGINS: 'screenstash://renderer,http://localhost:5173',
+      }).DESKTOP_AUTH_ORIGINS,
+    ).toEqual(['screenstash://renderer', 'http://localhost:5173']);
+    for (const value of [
+      'screenstash://other',
+      'screenstash://renderer/path',
+      'http://localhost:5174',
+      'https://foreign.example',
+    ]) {
+      expect(() => parseEnvironment({ DESKTOP_AUTH_ORIGINS: value })).toThrow(
+        'DESKTOP_AUTH_ORIGINS',
+      );
+    }
+    expect(() =>
+      parseEnvironment({
+        NODE_ENV: 'production',
+        DESKTOP_AUTH_ORIGINS: 'http://localhost:5173',
+      }),
+    ).toThrow('DESKTOP_AUTH_ORIGINS');
+    expect(
+      parseEnvironment({
+        NODE_ENV: 'production',
+        DESKTOP_AUTH_ORIGINS: 'screenstash://renderer',
+      }).DESKTOP_AUTH_ORIGINS,
+    ).toEqual(['screenstash://renderer']);
+  });
 });

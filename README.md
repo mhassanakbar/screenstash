@@ -37,7 +37,7 @@ pnpm test:integration
 pnpm format:check
 ```
 
-Turbo builds workspace dependencies before their consumers. The desktop build produces a packaged Windows application in `apps/desktop/out/`; it does not launch a window. The desktop smoke check loads the packaged renderer and preload in a hidden Electron window.
+Turbo builds workspace dependencies before their consumers. The desktop build produces a packaged Windows application in `apps/desktop/out/`; it does not launch a window. The desktop smoke check loads the actual ASAR main entry and checks the local protocol, sandboxed preload and offline renderer in a hidden Electron window.
 
 The HTTP smoke check starts the compiled API on port 4000 and production Next.js on port 3000, verifies rewrites/response contracts, and stops both servers. Those ports must be free, and the web build must use the default local API origin.
 
@@ -74,6 +74,10 @@ Set the web project's `EXPRESS_API_ORIGIN` to the API project's origin before bu
 Use `pnpm configure:maintenance` for a missing local secret, `pnpm ops:status` for aggregate backlog/configuration diagnostics, and `pnpm fixture:upload <png> [ocr-text-file]` with a fresh process-local `SCREENSTASH_SESSION_TOKEN` for synthetic uploads. See the runbook for secret handling and limits. A manual GitHub development-browser workflow is included; configure its development environment secrets before dispatch.
 
 ## Desktop distribution
+
+The approved [desktop implementation plan](docs/desktop-implementation-plan.md) covers Clerk integration, native capture, local OCR, durable upload recovery, tray/settings and installed Windows acceptance. The first increment implements Clerk session persistence, trusted IPC and a native display probe; persisted captures, OCR and uploads remain pending.
+
+Desktop authentication requires Native API enabled in the existing Clerk instance, matching publishable keys, and the Frontend API hostname in `apps/desktop/.env`. Configure the API's `DESKTOP_AUTH_ORIGINS=screenstash://renderer,http://localhost:5173` for development; production accepts only `screenstash://renderer`. The Clerk origin allowlist must include these alongside the web origin. `node scripts/configure-desktop-development.mjs` preserves existing development origins and sets the local Frontend API hostname without printing credentials. `pnpm test:desktop` runs against the packaged Windows executable with disposable development accounts and isolated profiles; it verifies session renewal, encrypted restart, sign-out, IPC rejection and the attached display's dimensions. Keep Windows time synchronized for JWT validation.
 
 `pnpm desktop:make` produces a Windows Squirrel installer and ZIP. Artifacts are unsigned development builds. Code signing, the Clerk production renderer scheme, packaged OCR resources, and release publishing will be implemented in their planned stages.
 
