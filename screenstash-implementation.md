@@ -1,73 +1,59 @@
 # ScreenStash — MVP Implementation Document
 
-Version 1.5 · 9 October 2026 · Based on [screenstash-spec.md](./screenstash-spec.md), specification v0.5
+Version 1.6 · 10 October 2026 · Based on [screenstash-spec.md](./screenstash-spec.md), specification v0.5
 
-**Status:** Implementation paused at the user's request. Authentication, uploads, private media, gallery/detail/deletion, and the search/tag API are implemented. Search, rename, tag and date controls compile but still need browser acceptance checks. Public sharing and desktop capture/OCR/queue features remain pending. The architecture below describes the intended complete MVP; the checkpoint records the actual current state.
+**Status:** Server/web features are implemented and verified locally. Clerk authentication, uploads/private media, gallery/deletion, editing/search/filtering and public sharing pass production-mode local acceptance. Deployment readiness remains pending. Desktop authentication/capture/OCR/queue remains a separate stage.
 
-## Implementation checkpoint — 9 October 2026
+## Implementation checkpoint — 10 October 2026
 
-Resume from this checkpoint and [the approved server/web phase plan](docs/server-web-implementation-plan.md). The user approved implementation; routine fixes and the remaining phases do not require another planning approval. Do not deploy or publish as part of resuming local implementation.
+Continued from commit `c5f3609` (`feat: implement authenticated screenshot vault checkpoint`). The user approved the [server/web phase plan](docs/server-web-implementation-plan.md); remaining routine work does not need another planning approval. This checkpoint records the subsequent implementation; no deployment has been made. See the [operations runbook](docs/operations-runbook.md) for commands, configuration and release gates.
 
 ### Current implementation
 
 | Phase | Current state |
 | --- | --- |
-| 1. Configuration, contracts and database | Implemented. Local environment loading, sanitized errors/request IDs, health/readiness, Zod contracts, typed authenticated client, Drizzle schema/migration, database adapter, Vitest and Playwright harnesses. |
-| 2. Clerk and protected web shell | Implemented. Clerk Next.js/Express SDKs, SignIn/SignUp/UserButton/UserProfile, protected vault layouts, identity mapping, `/api/me`, idempotent device registration, signed deletion webhooks, tombstones, account-scoped query caches. Real development sign-in/sign-out and two distinct owners verified. Real webhook delivery is still a configuration gate. |
-| 3. Uploads, private media and cleanup | Core implemented and locally verified against PostgreSQL/R2. Presigned staging PUT, immutable metadata, renewal, PNG/checksum/dimension verification, retry-safe finalization, unique final object per processing attempt, durable cleanup jobs/leases, account quotas, shared upload throttles, cookie/bearer-authorized GET/HEAD/download, protected maintenance endpoint. Operational follow-ups below remain. |
-| 4. Gallery, detail and deletion | Implemented and basic browser flow verified. Responsive gallery, loading/error/empty states, pagination, foreground polling, accessible detail dialog, OCR text, original download and confirmed permanent deletion. Owner isolation and tied-date pagination tested in PostgreSQL. |
-| 5. Rename, tags, dates and search | API implemented and integration-tested. Weighted `simple` full-text search for title/tags/OCR, normalized owner-scoped tags, transactional updates, AND-tag and half-open UTC date filters, rank/date/ID pagination and filter-bound cursors. Debounced URL-preserved filters and editing controls are written and compile; browser acceptance for these latest controls has not run. |
-| 6. Public shares and social metadata | Not started. Hash-only share tokens, preview generation, public Express lookup/media routes, Next.js `/s/[token]` pages/metadata, replacement/revocation and sharing UI remain. |
-| 7. Operations and release verification | In progress. CI has unit tests and a PostgreSQL service integration job. Live Vercel deployment, function limits/streaming, cron, backup/restore, external webhook delivery and Discord/X preview validation remain release gates. |
+| 1. Configuration, contracts and database | Implemented. Environment validation/loading, sanitized errors/request IDs, health/readiness, Zod contracts, typed client, ten-table Drizzle migration, pooled database adapter and isolated test harnesses. Both local disposable-database and supplied disposable-URL/schema branches verified. |
+| 2. Clerk and protected web shell | Implemented. Clerk UI/SDK verification, owner/device provisioning, protected vault, account-scoped queries, bearer JSON/cookie media transport, signed deletion webhook handling and tombstones. Real development sign-in/sign-out and distinct owners verified; real webhook delivery remains pending. |
+| 3. Uploads, private media and cleanup | Implemented and verified against PostgreSQL/R2. Bounded verified PNG uploads, fresh immutable final keys, retries/leases, quotas, throttles, streaming originals, durable cleanup, global/owner/process processing admission, decode deadlines and protected maintenance. Standalone development uploader, maintenance-secret utility, operations status and daily cron configuration added. |
+| 4. Gallery, detail and deletion | Implemented. Lazy gallery/pagination/foreground polling, original/detail/OCR/download, accessible dialog and confirmed deletion. Responsive mobile layout, keyboard focus, owner isolation and deterministic pagination verified. Gallery tag loading is batched. |
+| 5. Rename, tags, dates and search | Implemented and browser-verified. Weighted title/tag/OCR search, normalized owner-scoped tags, transactional updates, AND-tag and half-open UTC dates, filter-bound pagination, URL-preserved filters, error/empty states and editing feedback. Dialog title updates after rename; repeat finalization returns current tags. |
+| 6. Public shares and social metadata | Implemented and locally verified. Hash-only random tokens, separately approved public titles, immutable stripped JPEG previews, minimal public DTOs, authorized original/preview GET/HEAD, explicit replacement/revocation, Next.js request-time public pages, blocking OG/Twitter metadata, generic unavailable views and sharing UI. Public routes are outside Clerk layouts. |
+| 7. Operations and release verification | Local checks complete. Added runbook, aggregate backlog diagnostics, explicit 120-second function duration, daily maintenance schedule, quotas/rates and a manually dispatched development browser CI workflow. Remote CI execution, deployed limits/streaming/cache behavior, actual webhook delivery, backup/restore and Discord/X previews are pending. |
 
-The Electron foundation is preserved. Desktop Clerk integration, capture, OCR, durable queue and uploader have not been implemented in this server/web stage. No browser upload product flow was added; acceptance tests upload synthetic fixtures through the desktop-facing API.
+The Electron foundation still builds and its hidden-window smoke test passes; desktop product features are not implemented by this stage. No browser upload product flow was added.
 
-### Verification already completed
+### Verification evidence
 
-| Check | Last successful evidence |
+| Check | Successful local evidence on 10 October |
 | --- | --- |
-| `pnpm test` | 23 contract, environment, API/client and embedded PostgreSQL tests. This passed before the latest search/UI changes; rerun during resume. |
-| `pnpm test:integration` | 21 real local PostgreSQL tests. Covers schema constraints, transactions/leases, concurrent account provisioning, device identity, signed/forged/duplicate deletion events, Clerk JWT expiry/wrong-key/authorized-party rejection, upload concurrency/immutable bytes, PNG rejection, quotas, pagination, ownership, cleanup recovery, weighted search and tag/date filters. |
-| `pnpm test:storage` | One live R2 test passed: direct signed PUT, finalization/idempotency, checksum match and staging overwrite unable to change the verified original. Disposable storage fixtures were removed. |
-| `pnpm test:e2e` | Two production-runtime Playwright tests passed using real development Clerk and R2. Sign-in/sign-out, two distinct owners, cookie-only mutation denial, upload, gallery after reload, detail/OCR, Escape dismissal, confirmed deletion and denied retry. A 20 MiB PNG streamed with matching checksum through the Next.js rewrite and direct Express download; HEAD length was verified. These checks preceded the latest search/edit UI additions. |
-| `pnpm typecheck` | Most recent run passed all six packages and test/config TypeScript checks, including the latest search/edit/filter UI; production Next.js build also passed. |
-| Lint/format/runtime smoke | Earlier foundation/auth checks passed. The later lint run found a control-character regex rule in filename sanitization; that code was corrected, but the complete final lint/format/smoke sweep has not run since subsequent changes. |
+| `pnpm test` | 23 unit/contracts/client/API/embedded PostgreSQL tests. |
+| `pnpm test:integration` | 32 real PostgreSQL tests, including signed/forged/de-duplicated webhook events, negative Clerk JWT cases, ownership/constraints, search/tag/date pagination, shared admission, maintenance authorization, interrupted writes, account deletion during finalization, protected originals, staging expiry, public privacy/preview generation/replacement/revocation/deletion and orphan recovery. |
+| `pnpm test:storage` | One live R2 test: signed direct PUT, verified finalization, idempotency, checksum and immutable original after staging overwrite. |
+| `pnpm test:e2e` | Two production-runtime tests using real development Clerk/R2. Rename/tag/search/persisted filters/dates/mobile/focus passed. Public signed-out page, browser/Discord/Twitter initial HTML metadata, JPEG dimensions, 20 MiB original transfer/checksum, GET/HEAD, explicit replacement, revocation and screenshot deletion passed. |
+| `pnpm check` | Lint, type checks including test/config files, and production builds across all six packages passed. |
+| `pnpm format:check` | All matched source, test, configuration and operations documents passed. The specification/implementation document retain their existing formatting exclusion. |
+| `pnpm smoke`, `pnpm smoke:desktop` | Production API/web/proxy/HEAD/no-store smoke and packaged Electron preload/isolation checks passed. |
+| `pnpm ops:status` | Live local database aggregates: 26 pending/due cleanup jobs, no pending uploads, no active processing slots. Maintenance configured; webhook signing secret absent. |
+| `pnpm ops:review-cleanup` | After final browser acceptance: 33 pending jobs, 30 due, zero active original/preview/write references, 26 associated with deleted owners. Exact read-only manifest in ignored `test-results/cleanup-review.json`; no deletions. |
 
-The 20 MiB fixture used a small valid PNG with trailing padding to test transfer size. It does **not** establish worst-case 40-million-pixel Sharp memory/runtime or deployed Vercel streaming performance. Clerk negative-token tests use the official middleware with an explicit test verification key; separate browser tests use actual Clerk sessions. No production auth bypass was added.
+The padded 20 MiB PNG proves local transfer size, not worst-case 40-million-pixel memory/runtime or deployed Vercel streaming. Local crawler metadata checks do not prove actual social-platform previews. GitHub workflow files have not been run remotely. The fixture uploader is compiled/linted; its protocol is covered by live storage/browser tests rather than a separate manual user-token invocation.
 
-### Database and service state
+### Service state and outstanding work
 
-- The user supplied local `DATABASE_URL` and `DIRECT_DATABASE_URL` in ignored `apps/api/.env`. The development database was inspected as empty before applying `packages/db/migrations/0000_initial_vault.sql`; that migration succeeded. Do not reset it or apply the initial SQL manually again.
-- `TEST_DATABASE_URL` is absent by the user's choice. Tests automatically create/drop isolated databases on the configured **local** PostgreSQL instance; this worked. The local role needs `CREATEDB`. Remote runtime/direct URLs are refused for automatic creation.
-- When a distinct disposable `TEST_DATABASE_URL` is supplied, the harness creates/removes a unique test schema and redirects migration schema qualifiers there. That newer branch compiles but still needs an explicit verification run, including the CI path.
-- Clerk development API/web credentials and R2 bucket credentials worked in live checks. Environment files remain ignored; no connection strings or secret values are stored in this document.
-- `CLERK_WEBHOOK_SIGNING_SECRET` and `CRON_SECRET` were initially absent and have not been generated/configured by this work. Their handlers return 503 while unconfigured. Signed webhook processing is tested locally; provider delivery is unverified.
-- Browser tests use `http://localhost:3000`, matching `WEB_ORIGIN`; the test Next.js listener also binds to `localhost`. The API listens on `127.0.0.1:4000`. Mixing localhost/127.0.0.1 for the web listener caused a Clerk proxy loop and was corrected. Production middleware explicitly sets local `/sign-in` and `/sign-up` paths.
-- Browser tests create disposable Clerk test users and synthetic screenshots; the latest teardown tombstones their local owners, removes their R2 fixture keys, and deletes provider users. Earlier runs predated that complete teardown. Inspect synthetic fixture leftovers before cleanup; do not touch other users' data.
-- No deployment, publishing or Git commit was performed. Changes include new untracked source/tests/migration files; preserve the working tree and all pre-existing user changes.
+- Local application database already has `0000_initial_vault.sql`; do not reset it or manually reapply its SQL. `TEST_DATABASE_URL` remains absent by the user's choice. Automatic isolated local databases work; a nested disposable-URL/schema test verifies the CI harness branch.
+- Ignored local Clerk/R2/database credentials work. `CRON_SECRET` is present; the setup utility preserved it without printing it. `CLERK_WEBHOOK_SIGNING_SECRET` is still absent. No secret values or connection strings appear in these documents.
+- Read-only operations inspection found 26 due cleanup jobs from earlier runs. Running that existing backlog was rejected by automatic approval review because it could delete persisted database/R2 objects without a reviewed target set. No backlog objects were deleted by that attempted operation. Review the exact targets and obtain approval before a destructive existing-backlog run. Synthetic test cleanup and recovery checks passed on their own disposable fixtures.
+- Browser tests use `http://localhost:3000` matching `WEB_ORIGIN`, and API `127.0.0.1:4000`. They create disposable Clerk users and remove synthetic R2 fixtures/tombstone local accounts; Clerk deletion is still attempted if local teardown fails.
+- Public links are shown only on creation. Closing the dialog discards its local URL; status returns no token. Replacing a link atomically revokes the old token. New access fails immediately after revocation/deletion commits, while already-fetched copies/platform caches may remain.
+- Fresh original/preview GET/HEAD checks authorize via PostgreSQL and stream R2 bytes with no-store and generic filenames. Next.js fetches each share at request time, deduplicating only within the response; all agents receive blocking metadata. Dependency failures remain generic errors rather than false revoked-link 404s.
 
-### Start here tomorrow
+### Next stage
 
-1. Read this checkpoint and inspect the working tree. Run `pnpm test`, `pnpm test:integration`, `pnpm lint`, `pnpm typecheck`, scoped server/web production builds and the runtime smoke check. Format the latest UI/test files. Fix genuine regressions before extending features.
-2. Extend `tests/e2e/auth.spec.ts` for rename, tag creation/assignment, OCR/title/tag search, persisted filters after reload, date controls and mobile/keyboard behavior. The attempted patch adding these assertions did **not** apply before the pause; the current test still exercises the earlier gallery flow. Run `pnpm test:e2e` and complete the phase 5 gate.
-3. Review the latest UI/API details: the dialog title currently uses the originally selected gallery item after rename; tag loading failures need clear feedback; filtered empty results still use the account-connected heading. Batch gallery tag loading instead of one query per image. Repeated finalization currently returns an empty tag array even if the image was subsequently tagged; align that response with normal detail DTOs.
-4. Close phase 3 operational gaps: add the standalone authenticated development fixture uploader, generate/configure the maintenance secret without displaying it, document quotas, verify the disposable `TEST_DATABASE_URL` branch and maintenance authorization. Add shared processing admission limits across function instances; current per-process Sharp capacity and per-session leases are insufficient to claim that deployment-level gate is complete. Add remaining rate limits for provisioning/tag/share operations.
-5. Harden cleanup verification around interrupted writes, account deletion during finalization, active-object protection, lease expiry, late staging PUTs and repeated worker invocations. Ensure browser teardown still deletes Clerk test accounts when a database/R2 cleanup step fails. Explicitly bound Vercel function duration and document private bucket/lifecycle setup.
-6. Implement phase 6 public sharing and its acceptance tests, then complete phase 7 runbooks and final checks. Preserve hash-only tokens, approved public titles, immutable previews, request-time availability and no-store semantics. Do not claim deployment readiness until real webhook, Vercel streaming/processing and social-preview gates pass.
-
-Useful commands from the workspace root:
-
-```powershell
-npx --yes pnpm@10.34.6 test
-npx --yes pnpm@10.34.6 test:integration
-npx --yes pnpm@10.34.6 test:storage
-npx --yes pnpm@10.34.6 test:e2e
-npx --yes pnpm@10.34.6 lint
-npx --yes pnpm@10.34.6 typecheck
-npx --yes pnpm@10.34.6 smoke
-```
-
-`test:e2e` now builds API/web and dependencies before starting their production servers. Ports 3000/4000 must be free. Chromium is installed. The global pnpm launcher previously failed in the sandbox; the pinned `npx` invocation worked. In Codex, network/local database/browser commands may need the usual sandbox escalation. This pause creates no automation or scheduled continuation.
+1. Review the continuation diff and commit when requested. Preserve existing user data and environment files.
+2. Configure the development GitHub environment if remote browser acceptance is wanted; the manual workflow needs development Clerk and dedicated test-bucket R2 secrets.
+3. For a separately authorized deployment, follow the operations runbook: configure both Vercel projects, private bucket/staging lifecycle, matching canonical origins, pooled/direct database connections, maintenance secret and real signed Clerk deletion endpoint.
+4. Complete live release evidence: maximum-size proxy streaming, worst-case/concurrent Sharp processing, warmed revocation, cron execution, webhook delivery, backup/object restore and actual Discord/X previews. Do not claim production readiness until these pass.
+5. Implement the separate desktop stage: Clerk renderer/session persistence, capture/OCR, durable local queue and uploader. Its foundation remains intact.
 
 ## 1. Objective and scope
 
@@ -195,7 +181,7 @@ Use UUID primary keys for application records, UTC `timestamptz` timestamps, and
 | `screenshot_tags` | Spec fields; composite primary key; enforce same-owner associations |
 | `upload_sessions` | Spec fields; `device_id`, `capture_id`, reserved `screenshot_id`, immutable expected metadata and checksum, staging `object_key`, current attempt ID, final object key, `finalized_at`, latest signed-URL expiry |
 | `devices` | Spec fields; `installation_id` unique per owner; registered after verified desktop sign-in; device IDs are metadata, not credentials |
-| `screenshot_shares` | Spec fields; `preview_object_key`, preview dimensions/type; no plaintext share token |
+| `screenshot_shares` | Spec fields; `preview_object_key`; preview format/dimensions are fixed by generation policy; no plaintext share token |
 | `webhook_events` | New: unique provider event ID, event type, processed timestamp; minimal deduplication records, no retained credential/profile payloads |
 | `cleanup_jobs` | New: object key, reason, `not_before`, attempts, next attempt, lease expiry, completion timestamp |
 
@@ -480,7 +466,7 @@ Use accessible dialog focus management, keyboard controls, visible loading/error
 2. Verify the screenshot is finalized and available. Generate a new share ID and random token; calculate its hash.
 3. Load the immutable original and generate a JPEG preview with Sharp: 1200 × 630, `fit: contain`, neutral padding, flattened transparency, and no source metadata. Preserve the original for the public image route. Sharp's contain mode fits the whole image inside the canvas. [Sharp resize API](https://sharp.pixelplumbing.com/api-resize/)
 4. Upload the preview to its server-generated key. In a transaction, lock/recheck the screenshot and active share. Insert only after the preview exists; no public token is active during incomplete generation.
-5. If an active share exists, return `409 SHARE_ALREADY_ACTIVE` unless the request explicitly sets `replaceActive: true`. Replacement atomically revokes the previous record, enqueues its preview cleanup, and activates a fresh token. The partial unique index enforces one active share during races.
+5. If an active share exists, return `409 CONFLICT` unless the request explicitly sets `replaceActive: true`. Replacement atomically revokes the previous record, enqueues its preview cleanup, and activates a fresh token. The partial unique index enforces one active share during races.
 6. Return the absolute HTTPS link once. The web dialog retains it in memory long enough to copy it. Do not put it in analytics, application logs, or persistent browser storage.
 
 **Hash-only token consequence:** after reload, the API can report that sharing is active but cannot recover the original link. Offer “Create replacement link,” clearly stating that the previous link will stop working. Do not silently rotate on dialog open. A lost create response also uses this explicit replacement flow. This preserves the spec's token-storage requirement without introducing encrypted recoverable tokens.
@@ -641,4 +627,4 @@ If time is tight, simplify visual polish, defer private thumbnails, and keep pol
 | Clerk Electron beta and remotely loaded UI | Pin SDK versions; prove installed auth, hidden renewal, CSP/origins, encrypted persistence, and offline capture independence early |
 | Clerk account-deletion delivery and session revocation timing | Verified/deduplicated webhook cleanup and tombstones; monitor delivery; document JWT expiry window and add stronger session checks if required |
 
-The next implementation step is the Weekend 1 foundation and risk spikes, using this document as the engineering checklist and the specification as the acceptance contract.
+Use the current implementation checkpoint above for the next stage; the architecture and delivery sequence remain the engineering checklist and the specification remains the acceptance contract.

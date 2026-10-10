@@ -17,7 +17,8 @@ import type { ObjectStore } from '../storage/r2.js';
 import { boundedRead } from '../storage/r2.js';
 import { processImage, verifyPng } from '../storage/images.js';
 import { HttpError } from '../middleware/errors.js';
-import { activeOwner, throttle } from './policy.js';
+import { activeOwner, throttle, withProcessingAdmission } from './policy.js';
+import { tagsForScreenshots } from './screenshot-tags.js';
 
 type Session = typeof uploadSessions.$inferSelect;
 type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
@@ -219,6 +220,7 @@ export class UploadService {
       );
   }
   async renew(ownerId: string, id: string) {
+    await throttle(this.database, `renew:${ownerId}`, 20);
     const session = await this.database.transaction(async (transaction) => {
       await activeOwner(transaction, ownerId);
       const [current] = await transaction
@@ -293,165 +295,188 @@ export class UploadService {
         ),
       );
     if (!image) throw deleted();
-    return screenshotDto(image);
+    return {
+      ...screenshotDto(image),
+      tags:
+        (await tagsForScreenshots(this.database, ownerId, [image.id])).get(
+          image.id,
+        ) ?? [],
+    };
   }
   async finalize(ownerId: string, id: string) {
     await throttle(this.database, `finalize:${ownerId}`, 30);
     const initial = await this.get(ownerId, id);
     if (initial.status === 'finalized') return this.finalized(ownerId, initial);
-    return processImage(async () => {
-      const leaseToken = randomUUID();
-      const session = await this.database.transaction(async (transaction) => {
-        await activeOwner(transaction, ownerId);
-        const [current] = await transaction
-          .select()
-          .from(uploadSessions)
-          .where(
-            and(eq(uploadSessions.id, id), eq(uploadSessions.userId, ownerId)),
-          )
-          .for('update');
-        if (!current) throw missing();
-        if (current.status === 'deleted') throw deleted();
-        if (current.status === 'finalized') return current;
-        if (current.status !== 'pending' || current.expiresAt <= new Date())
-          throw new HttpError(
-            409,
-            'UPLOAD_EXPIRED',
-            'Renew this upload before trying again.',
+    return withProcessingAdmission(
+      this.database,
+      ownerId,
+      this.environment.IMAGE_PROCESSING_GLOBAL_LIMIT,
+      () =>
+        processImage(async () => {
+          const leaseToken = randomUUID();
+          const session = await this.database.transaction(
+            async (transaction) => {
+              await activeOwner(transaction, ownerId);
+              const [current] = await transaction
+                .select()
+                .from(uploadSessions)
+                .where(
+                  and(
+                    eq(uploadSessions.id, id),
+                    eq(uploadSessions.userId, ownerId),
+                  ),
+                )
+                .for('update');
+              if (!current) throw missing();
+              if (current.status === 'deleted') throw deleted();
+              if (current.status === 'finalized') return current;
+              if (
+                current.status !== 'pending' ||
+                current.expiresAt <= new Date()
+              )
+                throw new HttpError(
+                  409,
+                  'UPLOAD_EXPIRED',
+                  'Renew this upload before trying again.',
+                );
+              if (current.leaseExpiresAt && current.leaseExpiresAt > new Date())
+                throw new HttpError(
+                  409,
+                  'CONFLICT',
+                  'This upload is being verified.',
+                  true,
+                );
+              const finalKey = `originals/${ownerId}/${current.screenshotId}/${randomUUID()}.png`;
+              await enqueueCleanup(
+                transaction,
+                current.finalKey,
+                ownerId,
+                'retired_final',
+                new Date(Date.now() + 300000),
+              );
+              // Register the possible orphan before writing, so an interrupted function remains recoverable.
+              await enqueueCleanup(
+                transaction,
+                finalKey,
+                ownerId,
+                'incomplete_finalize',
+                new Date(Date.now() + 300000),
+              );
+              const [claimed] = await transaction
+                .update(uploadSessions)
+                .set({
+                  leaseToken,
+                  leaseExpiresAt: new Date(Date.now() + 120000),
+                  finalKey,
+                })
+                .where(eq(uploadSessions.id, id))
+                .returning();
+              if (!claimed) throw missing();
+              return claimed;
+            },
           );
-        if (current.leaseExpiresAt && current.leaseExpiresAt > new Date())
-          throw new HttpError(
-            409,
-            'CONFLICT',
-            'This upload is being verified.',
-            true,
-          );
-        const finalKey = `originals/${ownerId}/${current.screenshotId}/${randomUUID()}.png`;
-        await enqueueCleanup(
-          transaction,
-          current.finalKey,
-          ownerId,
-          'retired_final',
-          new Date(Date.now() + 300000),
-        );
-        // Register the possible orphan before writing, so an interrupted function remains recoverable.
-        await enqueueCleanup(
-          transaction,
-          finalKey,
-          ownerId,
-          'incomplete_finalize',
-          new Date(Date.now() + 300000),
-        );
-        const [claimed] = await transaction
-          .update(uploadSessions)
-          .set({
-            leaseToken,
-            leaseExpiresAt: new Date(Date.now() + 120000),
-            finalKey,
-          })
-          .where(eq(uploadSessions.id, id))
-          .returning();
-        if (!claimed) throw missing();
-        return claimed;
-      });
-      if (session.status === 'finalized')
-        return this.finalized(ownerId, session);
-      try {
-        const { bytes, type } = await boundedRead(
-          this.store,
-          session.stagingKey,
-          session.sizeBytes,
-        );
-        if (type !== 'image/png')
-          throw new HttpError(
-            400,
-            'UPLOAD_INVALID',
-            'The uploaded image has the wrong content type.',
-          );
-        await verifyPng(bytes, session);
-        // Write exactly the verified buffer, never copy mutable staging content after verification.
-        await this.store.write(session.finalKey, bytes, 'image/png');
-        const image = await this.database.transaction(async (transaction) => {
-          await activeOwner(transaction, ownerId);
-          const [current] = await transaction
-            .select()
-            .from(uploadSessions)
-            .where(eq(uploadSessions.id, id))
-            .for('update');
-          if (
-            !current ||
-            current.status !== 'pending' ||
-            current.leaseToken !== leaseToken ||
-            current.attemptId !== session.attemptId ||
-            !current.leaseExpiresAt ||
-            current.leaseExpiresAt <= new Date()
-          )
-            throw new HttpError(
-              409,
-              'CONFLICT',
-              'Upload verification was interrupted. Try again.',
-              true,
+          if (session.status === 'finalized')
+            return this.finalized(ownerId, session);
+          try {
+            const { bytes, type } = await boundedRead(
+              this.store,
+              session.stagingKey,
+              session.sizeBytes,
             );
-          const [inserted] = await transaction
-            .insert(screenshots)
-            .values({
-              ...immutable(session),
-              capturedAt: session.capturedAt,
-              id: session.screenshotId,
-              userId: ownerId,
-              objectKey: session.finalKey,
-              mimeType: 'image/png',
-              searchVector: sql`setweight(to_tsvector('simple', ${session.title}), 'A') || setweight(to_tsvector('simple', ${session.ocrText}), 'C')`,
-            })
-            .returning();
-          await transaction
-            .update(uploadSessions)
-            .set({
-              status: 'finalized',
-              finalizedAt: new Date(),
-              leaseToken: null,
-              leaseExpiresAt: null,
-            })
-            .where(eq(uploadSessions.id, id));
-          await transaction
-            .update(cleanupJobs)
-            .set({ completedAt: new Date() })
-            .where(
-              and(
-                eq(cleanupJobs.objectKey, session.finalKey),
-                isNull(cleanupJobs.completedAt),
-              ),
+            if (type !== 'image/png')
+              throw new HttpError(
+                400,
+                'UPLOAD_INVALID',
+                'The uploaded image has the wrong content type.',
+              );
+            await verifyPng(bytes, session);
+            // Write exactly the verified buffer, never copy mutable staging content after verification.
+            await this.store.write(session.finalKey, bytes, 'image/png');
+            const image = await this.database.transaction(
+              async (transaction) => {
+                await activeOwner(transaction, ownerId);
+                const [current] = await transaction
+                  .select()
+                  .from(uploadSessions)
+                  .where(eq(uploadSessions.id, id))
+                  .for('update');
+                if (
+                  !current ||
+                  current.status !== 'pending' ||
+                  current.leaseToken !== leaseToken ||
+                  current.attemptId !== session.attemptId ||
+                  !current.leaseExpiresAt ||
+                  current.leaseExpiresAt <= new Date()
+                )
+                  throw new HttpError(
+                    409,
+                    'CONFLICT',
+                    'Upload verification was interrupted. Try again.',
+                    true,
+                  );
+                const [inserted] = await transaction
+                  .insert(screenshots)
+                  .values({
+                    ...immutable(session),
+                    capturedAt: session.capturedAt,
+                    id: session.screenshotId,
+                    userId: ownerId,
+                    objectKey: session.finalKey,
+                    mimeType: 'image/png',
+                    searchVector: sql`setweight(to_tsvector('simple', ${session.title}), 'A') || setweight(to_tsvector('simple', ${session.ocrText}), 'C')`,
+                  })
+                  .returning();
+                await transaction
+                  .update(uploadSessions)
+                  .set({
+                    status: 'finalized',
+                    finalizedAt: new Date(),
+                    leaseToken: null,
+                    leaseExpiresAt: null,
+                  })
+                  .where(eq(uploadSessions.id, id));
+                await transaction
+                  .update(cleanupJobs)
+                  .set({ completedAt: new Date() })
+                  .where(
+                    and(
+                      eq(cleanupJobs.objectKey, session.finalKey),
+                      isNull(cleanupJobs.completedAt),
+                    ),
+                  );
+                await enqueueCleanup(
+                  transaction,
+                  session.stagingKey,
+                  ownerId,
+                  'upload_finalized',
+                  new Date(session.latestPutExpiresAt.getTime() + expiryMargin),
+                );
+                if (!inserted) throw missing();
+                return inserted;
+              },
             );
-          await enqueueCleanup(
-            transaction,
-            session.stagingKey,
-            ownerId,
-            'upload_finalized',
-            new Date(session.latestPutExpiresAt.getTime() + expiryMargin),
-          );
-          if (!inserted) throw missing();
-          return inserted;
-        });
-        return screenshotDto(image);
-      } catch (error) {
-        await this.database
-          .update(uploadSessions)
-          .set({
-            leaseToken: null,
-            leaseExpiresAt: null,
-            ...(error instanceof HttpError && error.code === 'UPLOAD_INVALID'
-              ? { status: 'rejected' as const }
-              : {}),
-          })
-          .where(
-            and(
-              eq(uploadSessions.id, id),
-              eq(uploadSessions.leaseToken, leaseToken),
-              eq(uploadSessions.status, 'pending'),
-            ),
-          );
-        throw error;
-      }
-    });
+            return screenshotDto(image);
+          } catch (error) {
+            await this.database
+              .update(uploadSessions)
+              .set({
+                leaseToken: null,
+                leaseExpiresAt: null,
+                ...(error instanceof HttpError &&
+                error.code === 'UPLOAD_INVALID'
+                  ? { status: 'rejected' as const }
+                  : {}),
+              })
+              .where(
+                and(
+                  eq(uploadSessions.id, id),
+                  eq(uploadSessions.leaseToken, leaseToken),
+                  eq(uploadSessions.status, 'pending'),
+                ),
+              );
+            throw error;
+          }
+        }),
+    );
   }
 }

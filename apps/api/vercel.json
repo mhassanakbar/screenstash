@@ -1,4 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "cd ../.. && pnpm exec turbo run build --filter=@screenstash/api..."
+  "buildCommand": "cd ../.. && pnpm exec turbo run build --filter=@screenstash/api...",
+  "functions": { "src/index.ts": { "maxDuration": 120 } },
+  "crons": [{ "path": "/api/internal/maintenance", "schedule": "0 3 * * *" }]
 }

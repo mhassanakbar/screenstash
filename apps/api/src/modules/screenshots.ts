@@ -18,8 +18,9 @@ import {
   type ScreenshotPatch,
 } from '@screenstash/shared';
 import { HttpError } from '../middleware/errors.js';
-import { activeOwner } from './policy.js';
+import { activeOwner, throttle } from './policy.js';
 import { enqueueCleanup, screenshotDto } from './uploads.js';
+import { tagsForScreenshots } from './screenshot-tags.js';
 
 const cursorSchema = z.strictObject({
   owner: idSchema,
@@ -49,27 +50,8 @@ export async function getScreenshot(
   if (!result) throw missing();
   return {
     ...screenshotDto(result.image),
-    tags: await imageTags(database, ownerId, id),
+    tags: (await tagsForScreenshots(database, ownerId, [id])).get(id) ?? [],
   };
-}
-async function imageTags(database: Database, ownerId: string, id: string) {
-  return database
-    .select({ id: tags.id, name: tags.name })
-    .from(tags)
-    .innerJoin(
-      screenshotTags,
-      and(
-        eq(screenshotTags.tagId, tags.id),
-        eq(screenshotTags.userId, tags.userId),
-      ),
-    )
-    .where(
-      and(
-        eq(screenshotTags.userId, ownerId),
-        eq(screenshotTags.screenshotId, id),
-      ),
-    )
-    .orderBy(tags.normalizedName);
 }
 export async function listScreenshots(
   database: Database,
@@ -154,15 +136,17 @@ export async function listScreenshots(
     )
     .orderBy(desc(rank), desc(screenshots.capturedAt), desc(screenshots.id))
     .limit(limit + 1);
-  const items = await Promise.all(
-    rows
-      .slice(0, limit)
-      .map(async (row) =>
-        screenshotSchema.parse({
-          ...screenshotDto(row.image),
-          tags: await imageTags(database, ownerId, row.image.id),
-        }),
-      ),
+  const page = rows.slice(0, limit);
+  const associatedTags = await tagsForScreenshots(
+    database,
+    ownerId,
+    page.map((row) => row.image.id),
+  );
+  const items = page.map((row) =>
+    screenshotSchema.parse({
+      ...screenshotDto(row.image),
+      tags: associatedTags.get(row.image.id) ?? [],
+    }),
   );
   const last = items.at(-1);
   return {
@@ -193,6 +177,7 @@ export async function createTag(
   ownerId: string,
   name: string,
 ) {
+  await throttle(database, `tags:${ownerId}`, 60);
   const normalizedName = name.normalize('NFKC').toLocaleLowerCase('en-US');
   if (normalizedName.length > 80)
     throw new HttpError(
@@ -251,15 +236,13 @@ export async function updateScreenshot(
         .delete(screenshotTags)
         .where(eq(screenshotTags.screenshotId, id));
       if (owned.length)
-        await transaction
-          .insert(screenshotTags)
-          .values(
-            owned.map((tag) => ({
-              userId: ownerId,
-              screenshotId: id,
-              tagId: tag.id,
-            })),
-          );
+        await transaction.insert(screenshotTags).values(
+          owned.map((tag) => ({
+            userId: ownerId,
+            screenshotId: id,
+            tagId: tag.id,
+          })),
+        );
     }
     const title = patch.title ?? image.title!;
     await transaction

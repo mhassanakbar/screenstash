@@ -1,6 +1,6 @@
 # ScreenStash
 
-Windows screenshot vault with a Next.js website, Express API, and Electron desktop foundation. Server and web implementation is in progress.
+Windows screenshot vault with a Next.js website, Express API, and Electron desktop foundation. Server/web features are implemented and locally verified; deployment and desktop features remain pending.
 
 ## Workspace
 
@@ -13,7 +13,7 @@ Windows screenshot vault with a Next.js website, Express API, and Electron deskt
 | `packages/api-client` | Typed HTTP client; session-token provider boundary |
 | `packages/db`         | Drizzle + PostgreSQL adapter and migration tooling |
 
-The API includes configuration validation, Clerk ownership/device registration, signed deletion webhooks, verified R2 uploads, private media, gallery/deletion, and search/tag endpoints. The web app includes Clerk UI, gallery/detail/download/delete, and search/edit/filter controls. The latest search controls still need browser acceptance; public sharing and desktop capture remain pending. Work is paused; see the [implementation checkpoint](screenstash-implementation.md#implementation-checkpoint--9-october-2026) to resume.
+The API includes configuration validation, Clerk ownership/device registration, signed deletion webhook handling, verified R2 uploads, private media, gallery/deletion, search/tags, and public sharing. The web app includes Clerk UI, gallery/detail/download/delete, search/edit/filter controls, and revocable sharing with server-rendered OG/Twitter metadata. See the [implementation checkpoint](screenstash-implementation.md#implementation-checkpoint--10-october-2026) and [operations runbook](docs/operations-runbook.md) for verified behavior and remaining release gates.
 
 ## Requirements
 
@@ -69,7 +69,9 @@ Configure the Clerk webhook endpoint at `/api/webhooks/clerk` for `user.deleted`
 
 Create two Vercel projects rooted at `apps/web` and `apps/api`, with access to shared monorepo files. Their `vercel.json` build commands use filtered Turbo builds so each app's shared dependencies are built from a clean checkout. Next.js uses its standard framework preset; Express's `src/index.ts` default-exports the app for Vercel detection. The API build emits local runtime artifacts; `src/server.ts` is only the local listener.
 
-Set the web project's `EXPRESS_API_ORIGIN` to the API project's origin before building. API/media rewrites are explicit; the share-page route stays in Next.js. Keep future public sharing routes accessible to social crawlers rather than behind deployment protection. No deployment or external services have been provisioned.
+Set the web project's `EXPRESS_API_ORIGIN` to the API project's origin before building. API/media rewrites are explicit; the share-page route stays in Next.js. Keep public sharing routes accessible to social crawlers. The API configuration includes a 120-second function duration and daily maintenance cron. Provider execution, streaming/caching, signed webhook delivery, backups and real social previews still need deployed verification. No deployment has been made.
+
+Use `pnpm configure:maintenance` for a missing local secret, `pnpm ops:status` for aggregate backlog/configuration diagnostics, and `pnpm fixture:upload <png> [ocr-text-file]` with a fresh process-local `SCREENSTASH_SESSION_TOKEN` for synthetic uploads. See the runbook for secret handling and limits. A manual GitHub development-browser workflow is included; configure its development environment secrets before dispatch.
 
 ## Desktop distribution
 

@@ -14,6 +14,7 @@ import type { ObjectStore } from './storage/r2.js';
 import { uploadRoutes, maintenanceRoute } from './routes/uploads.js';
 import { privateMedia } from './routes/media.js';
 import { screenshotRoutes } from './routes/screenshots.js';
+import { shareRoutes } from './routes/shares.js';
 import {
   configuredDependencies,
   type Environment,
@@ -104,6 +105,7 @@ export function createApp(
   app.use(uploadRoutes(environment, services.database, services.store));
   app.use(privateMedia(services.database, services.store));
   app.use(screenshotRoutes(services.database));
+  app.use(shareRoutes(environment, services.database, services.store));
   app.post('/api/devices', async (req, res) => {
     if (!services.database)
       throw new HttpError(

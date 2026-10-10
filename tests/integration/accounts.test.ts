@@ -152,18 +152,52 @@ describe('Account ownership and deletion', () => {
   it('uses Clerk verification to reject expired, wrong-key and disallowed-party session JWTs as JSON', async () => {
     const pair = generateKeyPairSync('rsa', { modulusLength: 2048 });
     const other = generateKeyPairSync('rsa', { modulusLength: 2048 });
-    const environment = parseEnvironment({ CLERK_PUBLISHABLE_KEY: `pk_test_${Buffer.from('fixture.clerk.accounts.dev$').toString('base64')}`, CLERK_SECRET_KEY: 'sk_test_fixture', CLERK_JWT_KEY: pair.publicKey.export({ format: 'pem', type: 'spki' }).toString() });
+    const environment = parseEnvironment({
+      CLERK_PUBLISHABLE_KEY: `pk_test_${Buffer.from('fixture.clerk.accounts.dev$').toString('base64')}`,
+      CLERK_SECRET_KEY: 'sk_test_fixture',
+      CLERK_JWT_KEY: pair.publicKey
+        .export({ format: 'pem', type: 'spki' })
+        .toString(),
+    });
     const app = createApp(environment, { database });
     const now = Math.floor(Date.now() / 1000);
-    const payload = { v: 2, sub: `user_${randomUUID()}`, sid: `sess_${randomUUID()}`, iss: 'https://fixture.clerk.accounts.dev', azp: 'http://localhost:3000', iat: now, nbf: now - 10, exp: now + 60, sts: 'active' };
-    function token(patch: Record<string, unknown> = {}, privateKey = pair.privateKey) {
-      const value = [Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT', kid: 'fixture' })).toString('base64url'), Buffer.from(JSON.stringify({ ...payload, ...patch })).toString('base64url')].join('.');
+    const payload = {
+      v: 2,
+      sub: `user_${randomUUID()}`,
+      sid: `sess_${randomUUID()}`,
+      iss: 'https://fixture.clerk.accounts.dev',
+      azp: 'http://localhost:3000',
+      iat: now,
+      nbf: now - 10,
+      exp: now + 60,
+      sts: 'active',
+    };
+    function token(
+      patch: Record<string, unknown> = {},
+      privateKey = pair.privateKey,
+    ) {
+      const value = [
+        Buffer.from(
+          JSON.stringify({ alg: 'RS256', typ: 'JWT', kid: 'fixture' }),
+        ).toString('base64url'),
+        Buffer.from(JSON.stringify({ ...payload, ...patch })).toString(
+          'base64url',
+        ),
+      ].join('.');
       return `${value}.${sign('RSA-SHA256', Buffer.from(value), privateKey).toString('base64url')}`;
     }
-    const accepted = await request(app).get('/api/me').set('Authorization', `Bearer ${token()}`);
+    const accepted = await request(app)
+      .get('/api/me')
+      .set('Authorization', `Bearer ${token()}`);
     expect(accepted.status).toBe(200);
-    for (const rejected of [token({ exp: now - 60 }), token({ azp: 'https://foreign.example' }), token({}, other.privateKey)]) {
-      const response = await request(app).get('/api/me').set('Authorization', `Bearer ${rejected}`);
+    for (const rejected of [
+      token({ exp: now - 60 }),
+      token({ azp: 'https://foreign.example' }),
+      token({}, other.privateKey),
+    ]) {
+      const response = await request(app)
+        .get('/api/me')
+        .set('Authorization', `Bearer ${rejected}`);
       expect(response.status).toBe(401);
       expect(response.headers['content-type']).toContain('application/json');
       expect(response.headers.location).toBeUndefined();

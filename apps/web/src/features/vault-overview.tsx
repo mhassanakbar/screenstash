@@ -13,6 +13,7 @@ import { Download, ImageIcon, Trash2, X } from 'lucide-react';
 import { screenshotQuerySchema, type Screenshot } from '@screenstash/shared';
 import { LibraryFilters } from './library-filters';
 import { ScreenshotEditor } from './screenshot-editor';
+import { ScreenshotSharing } from './screenshot-sharing';
 import { useApi } from './providers';
 import { Button } from '../components/ui/button';
 
@@ -20,16 +21,25 @@ export function VaultOverview() {
   const api = useApi();
   const { userId } = useAuth();
   const [selected, setSelected] = useState<Screenshot | null>(null);
-  const opener = useRef<HTMLElement | null>(null), heading = useRef<HTMLHeadingElement>(null);
+  const opener = useRef<HTMLElement | null>(null),
+    heading = useRef<HTMLHeadingElement>(null);
   const params = useSearchParams();
-  const parsed = screenshotQuerySchema.safeParse({ ...(params.get('q') ? { q: params.get('q') } : {}), ...(params.getAll('tagId').length ? { tagId: params.getAll('tagId') } : {}), ...(params.get('from') ? { from: params.get('from') } : {}), ...(params.get('to') ? { to: params.get('to') } : {}) });
+  const parsed = screenshotQuerySchema.safeParse({
+    ...(params.get('q') ? { q: params.get('q') } : {}),
+    ...(params.getAll('tagId').length ? { tagId: params.getAll('tagId') } : {}),
+    ...(params.get('from') ? { from: params.get('from') } : {}),
+    ...(params.get('to') ? { to: params.get('to') } : {}),
+  });
   const filters = parsed.success ? parsed.data : {};
   const library = useInfiniteQuery({
     queryKey: ['screenshots', userId, filters],
     enabled: parsed.success,
     initialPageParam: null as string | null,
     queryFn: ({ pageParam, signal }) =>
-      api.screenshots(pageParam ? { ...filters, cursor: pageParam } : filters, signal),
+      api.screenshots(
+        pageParam ? { ...filters, cursor: pageParam } : filters,
+        signal,
+      ),
     getNextPageParam: (page) => page.nextCursor,
     refetchInterval: 15000,
     refetchIntervalInBackground: false,
@@ -40,7 +50,11 @@ export function VaultOverview() {
       <div className="flex items-end justify-between gap-4">
         <div>
           <p className="eyebrow">Your private space</p>
-          <h1 ref={heading} tabIndex={-1} className="mt-3 text-3xl font-semibold tracking-tight">
+          <h1
+            ref={heading}
+            tabIndex={-1}
+            className="mt-3 text-3xl font-semibold tracking-tight"
+          >
             Your library
           </h1>
           <p className="mt-3 text-neutral-500">
@@ -55,8 +69,12 @@ export function VaultOverview() {
           Refresh
         </Button>
       </div>
-      <LibraryFilters/>
-      {!parsed.success ? <p role="alert" className="mt-8 text-red-700">These filters are invalid. Check the dates or clear the filters.</p> : library.isPending ? (
+      <LibraryFilters />
+      {!parsed.success ? (
+        <p role="alert" className="mt-8 text-red-700">
+          These filters are invalid. Check the dates or clear the filters.
+        </p>
+      ) : library.isPending ? (
         <p role="status" className="mt-12 text-neutral-500">
           Loading your screenshots…
         </p>
@@ -81,10 +99,14 @@ export function VaultOverview() {
             aria-hidden="true"
           />
           <h2 className="mt-5 text-xl font-medium">
-            Your account is connected.
+            {params.toString()
+              ? 'No matching screenshots'
+              : 'Your account is connected.'}
           </h2>
           <p className="mx-auto mt-3 max-w-sm text-neutral-500">
-            {params.toString() ? 'No screenshots match these filters. Try another search.' : 'Capture a screenshot with the desktop app to start your library.'}
+            {params.toString()
+              ? 'No screenshots match these filters. Try another search.'
+              : 'Capture a screenshot with the desktop app to start your library.'}
           </p>
         </div>
       ) : (
@@ -93,7 +115,10 @@ export function VaultOverview() {
             {items.map((image) => (
               <button
                 key={image.id}
-                onClick={event => { opener.current = event.currentTarget; setSelected(image); }}
+                onClick={(event) => {
+                  opener.current = event.currentTarget;
+                  setSelected(image);
+                }}
                 className="group overflow-hidden rounded-xl border border-neutral-200 bg-white text-left shadow-sm outline-none transition hover:border-emerald-500 focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:ring-offset-4"
                 aria-label={`Open ${image.title}`}
               >
@@ -142,7 +167,12 @@ export function VaultOverview() {
           <ScreenshotDetail
             image={selected}
             onDeleted={() => setSelected(null)}
-            restoreFocus={() => (opener.current?.isConnected ? opener.current : heading.current)?.focus()}
+            restoreFocus={() =>
+              (opener.current?.isConnected
+                ? opener.current
+                : heading.current
+              )?.focus()
+            }
           />
         )}
       </Dialog.Root>
@@ -177,11 +207,17 @@ function ScreenshotDetail({
   return (
     <Dialog.Portal>
       <Dialog.Overlay className="fixed inset-0 z-40 bg-neutral-950/50 backdrop-blur-sm" />
-      <Dialog.Content onCloseAutoFocus={event => { event.preventDefault(); restoreFocus(); }} className="fixed inset-x-3 top-[5vh] z-50 mx-auto max-h-[90vh] max-w-5xl overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl outline-none sm:p-8">
+      <Dialog.Content
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          restoreFocus();
+        }}
+        className="fixed inset-x-3 top-[5vh] z-50 mx-auto max-h-[90vh] max-w-5xl overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl outline-none sm:p-8"
+      >
         <div className="flex items-start justify-between gap-5">
           <div>
             <Dialog.Title className="break-words text-xl font-semibold">
-              {image.title}
+              {detail.data?.title ?? image.title}
             </Dialog.Title>
             <Dialog.Description className="mt-2 text-sm text-neutral-500">
               {new Date(image.capturedAt).toLocaleString()} · {image.width} ×{' '}
@@ -211,7 +247,10 @@ function ScreenshotDetail({
             Delete screenshot
           </Button>
         </div>
-        {detail.data && <ScreenshotEditor key={image.id} image={detail.data}/>}
+        {detail.data && <ScreenshotEditor key={image.id} image={detail.data} />}
+        {detail.data && (
+          <ScreenshotSharing key={`share-${image.id}`} id={image.id} />
+        )}
         {confirming && (
           <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4">
             <p className="font-medium">Permanently delete this screenshot?</p>

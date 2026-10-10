@@ -16,6 +16,10 @@ import {
   createTag,
 } from '../../apps/api/src/modules/screenshots.js';
 import { runMaintenance } from '../../apps/api/src/modules/cleanup.js';
+import { withProcessingAdmission } from '../../apps/api/src/modules/policy.js';
+import { createApp } from '../../apps/api/src/app.js';
+import { deleteAccount } from '../../apps/api/src/webhooks/clerk.js';
+import request from 'supertest';
 import { parseEnvironment } from '../../apps/api/src/config/environment.js';
 import { verifyPng } from '../../apps/api/src/storage/images.js';
 import type { ObjectStore } from '../../apps/api/src/storage/r2.js';
@@ -82,6 +86,73 @@ describe('Upload verification and durable cleanup', () => {
     await store.write(session.stagingKey, bytes);
     return { owner, store, bytes, input, service, session };
   }
+  it('bounds processing across owners and recovers interrupted capacity by lease expiry', async () => {
+    const a = await resolveOwner(database, `user_${randomUUID()}`),
+      b = await resolveOwner(database, `user_${randomUUID()}`);
+    let release!: () => void, started!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const entered = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const work = withProcessingAdmission(database, a.id, 1, async () => {
+      started();
+      await held;
+    });
+    await entered;
+    try {
+      await expect(
+        withProcessingAdmission(database, b.id, 1, async () => 'blocked'),
+      ).rejects.toMatchObject({ status: 503 });
+    } finally {
+      release();
+      await work;
+    }
+    await expect(
+      withProcessingAdmission(database, b.id, 1, async () => 'accepted'),
+    ).resolves.toBe('accepted');
+    const key = `processing:${a.id}:${randomUUID()}`;
+    await temporary.pool.query(
+      "INSERT INTO rate_limits (key,count,expires_at) VALUES ($1,1,now()+interval '3 minutes')",
+      [key],
+    );
+    await expect(
+      withProcessingAdmission(database, b.id, 1, async () => 'blocked'),
+    ).rejects.toMatchObject({ status: 503 });
+    await temporary.pool.query(
+      "UPDATE rate_limits SET expires_at=now()-interval '1 second' WHERE key=$1",
+      [key],
+    );
+    await expect(
+      withProcessingAdmission(database, b.id, 1, async () => 'recovered'),
+    ).resolves.toBe('recovered');
+  });
+  it('requires the separate maintenance secret and accepts a bounded authenticated invocation', async () => {
+    const secret = 'fixture-maintenance-secret-with-32-characters';
+    const app = createApp(parseEnvironment({ CRON_SECRET: secret }), {
+      database,
+      store: new MemoryStore(),
+    });
+    expect((await request(app).get('/api/internal/maintenance')).status).toBe(
+      401,
+    );
+    expect(
+      (
+        await request(app)
+          .get('/api/internal/maintenance')
+          .set('Authorization', 'Bearer wrong')
+      ).status,
+    ).toBe(401);
+    const response = await request(app)
+      .get('/api/internal/maintenance')
+      .set('Authorization', `Bearer ${secret}`);
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      completed: expect.any(Number),
+      failed: expect.any(Number),
+    });
+  });
   it('finalizes once, preserves verified bytes after staging overwrite, and isolates ownership', async () => {
     const { owner, store, bytes, input, service, session } = await fixture();
     const results = await Promise.allSettled([
@@ -151,6 +222,93 @@ describe('Upload verification and durable cleanup', () => {
         sha256: createHash('sha256').update(truncated).digest('hex'),
       }),
     ).rejects.toMatchObject({ code: 'UPLOAD_INVALID' });
+  });
+  it('recovers a completed object write after an interrupted finalization without reusing the key', async () => {
+    const { owner, store, service, session } = await fixture();
+    const write = store.write.bind(store);
+    let orphan: string | undefined;
+    store.write = async (key, bytes) => {
+      await write(key, bytes);
+      if (key.startsWith('originals/') && !orphan) {
+        orphan = key;
+        throw new Error('Interrupted after storage accepted bytes');
+      }
+    };
+    await expect(service.finalize(owner.id, session.id)).rejects.toBeDefined();
+    const image = await service.finalize(owner.id, session.id);
+    const current = await service.get(owner.id, session.id);
+    expect(image.id).toBe(session.screenshotId);
+    expect(current.finalKey === orphan).toBe(false);
+    await temporary.pool.query(
+      'UPDATE cleanup_jobs SET not_before=now(),next_attempt_at=now() WHERE object_key=$1',
+      [orphan],
+    );
+    await runMaintenance(database, store, 50);
+    expect(store.objects.has(orphan!)).toBe(false);
+    expect(store.objects.has(current.finalKey)).toBe(true);
+  });
+  it('cannot publish an original when account deletion commits during the object write', async () => {
+    const { owner, store, service, session } = await fixture();
+    const write = store.write.bind(store);
+    store.write = async (key, bytes) => {
+      await write(key, bytes);
+      if (key.startsWith('originals/'))
+        await deleteAccount(
+          database,
+          `event_${randomUUID()}`,
+          owner.clerkUserId,
+        );
+    };
+    await expect(service.finalize(owner.id, session.id)).rejects.toMatchObject({
+      status: 403,
+    });
+    expect(
+      (
+        await temporary.pool.query('SELECT id FROM screenshots WHERE id=$1', [
+          session.screenshotId,
+        ])
+      ).rows,
+    ).toHaveLength(0);
+    const orphan = [...store.objects.keys()].find((key) =>
+      key.startsWith('originals/'),
+    )!;
+    // Deletion retains the writing lease until expiry; simulate the terminated invocation's grace period.
+    await temporary.pool.query(
+      "UPDATE upload_sessions SET lease_expires_at=now()-interval '1 second' WHERE id=$1",
+      [session.id],
+    );
+    await temporary.pool.query(
+      'UPDATE cleanup_jobs SET not_before=now(),next_attempt_at=now() WHERE object_key=$1',
+      [orphan],
+    );
+    await runMaintenance(database, store, 50);
+    expect(store.objects.has(orphan)).toBe(false);
+  });
+  it('defers staging cleanup until the issued PUT expiry and protects a referenced original', async () => {
+    const { owner, store, service, session } = await fixture();
+    await service.finalize(owner.id, session.id);
+    const current = await service.get(owner.id, session.id);
+    await temporary.pool.query(
+      "INSERT INTO cleanup_jobs(user_id,object_key,reason,not_before,next_attempt_at) VALUES ($1,$2,'protection_fixture',now(),now()) ON CONFLICT DO NOTHING",
+      [owner.id, current.finalKey],
+    );
+    await runMaintenance(database, store, 50);
+    expect(store.objects.has(current.stagingKey)).toBe(true);
+    expect(store.objects.has(current.finalKey)).toBe(true);
+    const protectedJob = (
+      await temporary.pool.query(
+        'SELECT completed_at,next_attempt_at FROM cleanup_jobs WHERE object_key=$1 ORDER BY created_at DESC LIMIT 1',
+        [current.finalKey],
+      )
+    ).rows[0];
+    expect(protectedJob.completed_at).toBeNull();
+    expect(protectedJob.next_attempt_at.getTime()).toBeGreaterThan(Date.now());
+    await temporary.pool.query(
+      'UPDATE cleanup_jobs SET not_before=now(),next_attempt_at=now() WHERE object_key=$1',
+      [current.stagingKey],
+    );
+    await runMaintenance(database, store, 50);
+    expect(store.objects.has(current.stagingKey)).toBe(false);
   });
   it('enforces transactional outstanding-upload quotas', async () => {
     const { owner, store, service, input } = await fixture();
@@ -261,6 +419,11 @@ describe('Upload verification and durable cleanup', () => {
       title: 'Semantics',
       tagIds: [work.id, project.id],
     });
+    const recovered = await service.finalize(owner.id, session.id);
+    expect(recovered.title).toBe('Semantics');
+    expect(recovered.tags.map((tag) => tag.id).sort()).toEqual(
+      [work.id, project.id].sort(),
+    );
     expect(
       (
         await listScreenshots(database, owner.id, 10, undefined, {

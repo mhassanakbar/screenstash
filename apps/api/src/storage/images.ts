@@ -7,7 +7,7 @@ sharp.cache(false);
 sharp.concurrency(1);
 let processing = 0;
 export async function processImage<T>(operation: () => Promise<T>) {
-  if (processing >= 2)
+  if (processing >= 1)
     throw new HttpError(
       503,
       'DEPENDENCY_UNAVAILABLE',
@@ -55,8 +55,15 @@ export async function verifyPng(
     )
       throw new Error('Invalid dimensions or format');
     // Force bounded full decoding so a valid header cannot hide truncated/corrupt pixels.
-    await image.stats();
-  } catch {
+    await image.timeout({ seconds: 20 }).stats();
+  } catch (error) {
+    if (error instanceof Error && /timeout/i.test(error.message))
+      throw new HttpError(
+        503,
+        'DEPENDENCY_UNAVAILABLE',
+        'Image verification exceeded its processing time. Try again shortly.',
+        true,
+      );
     throw new HttpError(
       400,
       'UPLOAD_INVALID',

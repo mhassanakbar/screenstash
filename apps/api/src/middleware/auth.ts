@@ -4,6 +4,7 @@ import type { Database } from '@screenstash/db';
 import type { Environment } from '../config/environment.js';
 import { resolveOwner } from '../modules/users.js';
 import { HttpError } from './errors.js';
+import { throttle } from '../modules/policy.js';
 
 export function authenticatedRoutes(
   environment: Environment,
@@ -45,7 +46,9 @@ export function authenticatedRoutes(
       next();
     },
     clerkMiddleware({
-      ...(environment.CLERK_JWT_KEY ? { jwtKey: environment.CLERK_JWT_KEY } : {}),
+      ...(environment.CLERK_JWT_KEY
+        ? { jwtKey: environment.CLERK_JWT_KEY }
+        : {}),
       secretKey: environment.CLERK_SECRET_KEY,
       publishableKey: environment.CLERK_PUBLISHABLE_KEY,
       authorizedParties: [new URL(environment.WEB_ORIGIN).origin],
@@ -55,6 +58,8 @@ export function authenticatedRoutes(
         const auth = getAuth(req, { acceptsToken: 'session_token' });
         if (!auth.userId)
           throw new HttpError(401, 'UNAUTHENTICATED', 'Sign in to continue.');
+        if (req.originalUrl.split('?')[0] === '/api/me')
+          await throttle(database, `provision:${auth.userId}`, 60);
         const owner = await resolveOwner(database, auth.userId);
         res.locals.owner = { id: owner.id, clerkUserId: owner.clerkUserId };
         next();

@@ -112,7 +112,16 @@ export function createObjectStore(
           size: result.ContentLength ?? 0,
           type: result.ContentType ?? 'application/octet-stream',
         };
-      } catch {
+      } catch (error) {
+        if (
+          (error as { $metadata?: { httpStatusCode?: number } }).$metadata
+            ?.httpStatusCode === 404
+        )
+          throw new HttpError(
+            404,
+            'NOT_FOUND',
+            'This shared screenshot is unavailable.',
+          );
         throw unavailable();
       }
     },

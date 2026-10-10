@@ -18,7 +18,7 @@ export default async function VaultLayout({
     >
       <PrivateProviders>
         <header className="border-b border-neutral-200 bg-white">
-          <div className="mx-auto flex h-18 max-w-7xl items-center justify-between gap-6 px-6">
+          <div className="mx-auto flex min-h-18 max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-4 sm:gap-6 sm:px-6">
             <Link
               href="/vault"
               className="text-xl font-semibold tracking-tight"
@@ -27,7 +27,7 @@ export default async function VaultLayout({
             </Link>
             <nav
               aria-label="Main navigation"
-              className="flex items-center gap-6 text-sm text-neutral-600"
+              className="flex items-center gap-3 text-sm text-neutral-600 sm:gap-6"
             >
               <Link href="/vault" className="font-medium text-neutral-900">
                 Library

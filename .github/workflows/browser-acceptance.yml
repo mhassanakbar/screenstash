@@ -1,0 +1,46 @@
+name: Development browser acceptance
+on:
+  workflow_dispatch:
+jobs:
+  browser:
+    runs-on: ubuntu-latest
+    environment: development
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: screenstash
+          POSTGRES_PASSWORD: screenstash_ci
+          POSTGRES_DB: screenstash_browser
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U screenstash -d screenstash_browser"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://screenstash:screenstash_ci@localhost:5432/screenstash_browser
+      DIRECT_DATABASE_URL: postgresql://screenstash:screenstash_ci@localhost:5432/screenstash_browser
+      CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+      CLERK_PUBLISHABLE_KEY: ${{ secrets.CLERK_PUBLISHABLE_KEY }}
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: ${{ secrets.CLERK_PUBLISHABLE_KEY }}
+      R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_BUCKET: ${{ secrets.R2_BUCKET }}
+      WEB_ORIGIN: http://localhost:3000
+      PUBLIC_BASE_URL: http://localhost:3000
+      EXPRESS_API_ORIGIN: http://127.0.0.1:4000
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.34.6
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm exec turbo run build --filter=@screenstash/db...
+      - run: pnpm db:migrate
+      - run: pnpm test:e2e

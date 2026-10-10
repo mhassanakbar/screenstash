@@ -61,6 +61,12 @@ const schema = z.object({
     .max(Number.MAX_SAFE_INTEGER)
     .default(1073741824),
   ACCOUNT_PENDING_UPLOADS: z.coerce.number().int().min(1).max(1000).default(25),
+  IMAGE_PROCESSING_GLOBAL_LIMIT: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .max(64)
+    .default(4),
   DATABASE_URL: optional(databaseUrl),
   CLERK_PUBLISHABLE_KEY: optional(z.string().min(1)),
   CLERK_SECRET_KEY: optional(z.string().min(1)),

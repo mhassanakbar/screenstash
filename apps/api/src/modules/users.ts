@@ -2,6 +2,7 @@ import { and, eq, isNull } from 'drizzle-orm';
 import { users, devices, type Database } from '@screenstash/db';
 import type { DeviceInput } from './types.js';
 import { HttpError } from '../middleware/errors.js';
+import { throttle } from './policy.js';
 
 export async function resolveOwner(database: Database, clerkUserId: string) {
   return database.transaction(async (transaction) => {
@@ -24,6 +25,7 @@ export async function registerDevice(
   ownerId: string,
   input: DeviceInput,
 ) {
+  await throttle(database, `devices:${ownerId}`, 30);
   return database.transaction(async (transaction) => {
     const [owner] = await transaction
       .select({ id: users.id })

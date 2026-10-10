@@ -1,10 +1,10 @@
 # Server and web implementation plan
 
-Status: approved; paused at the user's request on 9 October 2026.
+Status: approved; server/web features implemented and locally verified on 10 October 2026. Deployment gates remain pending.
 Prepared: 8 October 2026.
-Sources: specification v0.5 and implementation document v1.5.
+Sources: specification v0.5 and implementation document v1.6.
 
-Progress (9 October 2026): phases 1–4 are implemented with local PostgreSQL, real development Clerk, live R2 and production-browser verification of the upload/gallery/detail/download/delete flow. The search/tag API passes integration tests; phase 5 UI compiles but its browser gate is pending. Latest counts: 23 unit/infrastructure tests, 21 PostgreSQL integration tests, one live R2 test and two browser tests. Public sharing remains unimplemented, and operational/deployment gates remain pending. See the detailed [resume checkpoint](../screenstash-implementation.md#implementation-checkpoint--9-october-2026) for verification boundaries, follow-ups and tomorrow's starting point. No deployment has been performed.
+Progress (10 October 2026): phases 1–6 are implemented with local PostgreSQL, real development Clerk, live R2 and production-browser acceptance. Search/edit/date/tag controls and public sharing now pass, including initial social metadata and warmed replacement/revocation/deletion. Latest counts: 23 unit tests, 32 PostgreSQL integration tests, one live R2 test and two browser tests. Phase 7 has local checks, operations utilities/runbook and CI configuration; deployed webhook/cron/streaming/cache/processing, backup/restore and actual Discord/X previews remain pending. See the [current checkpoint](../screenstash-implementation.md#implementation-checkpoint--10-october-2026) and [operations runbook](operations-runbook.md). No deployment has been performed.
 
 ## Scope and checkpoint
 
