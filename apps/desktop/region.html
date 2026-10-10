@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Select screenshot region</title>
+  </head>
+  <body>
+    <img id="frame" alt="Frozen display" />
+    <div id="shade"></div>
+    <div id="selection" hidden></div>
+    <div id="help" role="status">Drag to select an area · Escape to cancel</div>
+    <script type="module" src="/src/renderer/region.ts"></script>
+  </body>
+</html>

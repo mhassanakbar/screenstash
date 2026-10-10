@@ -13,6 +13,8 @@ import { storage } from '@clerk/electron/storage';
 import path from 'node:path';
 import { readFile, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
+import Store from 'electron-store';
+import { z } from 'zod';
 import { createApiClient } from '@screenstash/api-client';
 import started from 'electron-squirrel-startup';
 import {
@@ -29,6 +31,9 @@ import {
 } from './security';
 import { TokenBroker } from './auth/broker';
 import { probeDisplay } from './capture/probe';
+import { CaptureRepository } from './capture/repository';
+import { CaptureController } from './capture/controller';
+import { captureChannels, captureModeSchema } from '../contracts/capture';
 
 app.setName('ScreenStash');
 if (
@@ -59,6 +64,7 @@ const authenticationConfigured = Boolean(
 );
 const broker = new TokenBroker(() => window?.webContents);
 let probeRunning = false;
+let captures: CaptureController | undefined;
 function trusted(event: IpcMainInvokeEvent) {
   if (
     !window ||
@@ -116,6 +122,7 @@ if (primary) {
     window?.focus();
   });
   app.on('before-quit', () => {
+    captures?.dispose();
     broker.invalidate();
     clerk.cleanup();
   });
@@ -165,6 +172,41 @@ if (primary) {
         baseUrl: apiOrigin,
         getSessionToken: () => broker.request(),
       });
+      const repository = new CaptureRepository(app.getPath('userData'));
+      await repository.initialize();
+      const shortcutSettings = new Store<{ printScreenEnabled: boolean }>({
+        name: 'capture-shortcuts',
+        defaults: { printScreenEnabled: false },
+      });
+      captures = new CaptureController(
+        repository,
+        () => window,
+        root,
+        {
+          read: () => shortcutSettings.get('printScreenEnabled'),
+          write: (enabled) =>
+            shortcutSettings.set('printScreenEnabled', enabled),
+        },
+        developmentUrl,
+        () => probeRunning,
+      );
+      captures.initialize();
+      registerHandler(captureChannels.start, (_event, mode) => {
+        if (probeRunning) return { status: 'failed', code: 'CAPTURE_BUSY' };
+        return captures!.capture(captureModeSchema.parse(mode));
+      });
+      registerHandler(captureChannels.state, () => captures!.state());
+      registerHandler(captureChannels.keyboardSettings, () => {
+        if (process.platform !== 'win32') throw new Error();
+        return shell.openExternal('ms-settings:easeofaccess-keyboard');
+      });
+      registerHandler(captureChannels.printScreen, (_event, enabled) =>
+        captures!.setPrintScreenEnabled(z.boolean().parse(enabled)),
+      );
+      registerHandler(captureChannels.reveal, async (_event, id) => {
+        if (typeof id !== 'string') throw new Error();
+        shell.showItemInFolder(await repository.imagePath(id));
+      });
       registerHandler(bridgeChannels.configuration, () =>
         configurationSchema.parse({
           authenticationConfigured,
@@ -172,8 +214,10 @@ if (primary) {
           version: app.getVersion(),
         }),
       );
-      registerHandler(bridgeChannels.invalidate, () => {
+      registerHandler(bridgeChannels.invalidate, async () => {
         broker.invalidate();
+        await repository.setIdentity(null);
+        captures!.changed();
       });
       registerHandler(bridgeChannels.authenticate, async () => {
         const epoch = broker.epoch();
@@ -193,13 +237,18 @@ if (primary) {
           AbortSignal.timeout(15000),
         );
         if (epoch !== broker.epoch()) throw new Error('Identity changed');
-        return identitySchema.parse({ owner, device });
+        const identity = identitySchema.parse({ owner, device });
+        await repository.setIdentity(identity);
+        if (epoch !== broker.epoch()) throw new Error('Identity changed');
+        captures!.changed();
+        return identity;
       });
       registerHandler(bridgeChannels.openVault, () =>
         shell.openExternal(new URL('/vault', webOrigin).href),
       );
       registerHandler(bridgeChannels.probeCapture, async () => {
-        if (probeRunning) throw new Error('Capture is busy');
+        if (probeRunning || captures!.state().busy)
+          throw new Error('Capture is busy');
         probeRunning = true;
         const visible = window?.isVisible();
         window?.hide();

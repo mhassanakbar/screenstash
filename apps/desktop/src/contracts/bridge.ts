@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { meSchema, deviceSchema } from '@screenstash/shared';
+import type { CaptureBridge } from './capture';
 
 export const bridgeChannels = {
   configuration: 'screenstash:configuration',
@@ -34,7 +35,7 @@ export const captureProbeSchema = z.object({
   actualHeight: z.number().int().positive(),
   nativeResolution: z.boolean(),
 });
-export interface DesktopBridge {
+export interface DesktopBridge extends CaptureBridge {
   readonly appName: 'ScreenStash';
   configuration(): Promise<z.infer<typeof configurationSchema>>;
   authenticate(): Promise<z.infer<typeof identitySchema>>;

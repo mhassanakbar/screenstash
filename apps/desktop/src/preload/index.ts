@@ -7,10 +7,42 @@ import {
   captureProbeSchema,
   type DesktopBridge,
 } from '../contracts/bridge';
+import {
+  captureChannels,
+  captureModeSchema,
+  captureOutcomeSchema,
+  captureStateSchema,
+} from '../contracts/capture';
+import { z } from 'zod';
 
 exposeClerkBridge();
 const bridge: DesktopBridge = {
   appName: 'ScreenStash',
+  capture: async (mode) =>
+    captureOutcomeSchema.parse(
+      await ipcRenderer.invoke(
+        captureChannels.start,
+        captureModeSchema.parse(mode),
+      ),
+    ),
+  captureState: async () =>
+    captureStateSchema.parse(await ipcRenderer.invoke(captureChannels.state)),
+  revealCapture: (id) =>
+    ipcRenderer.invoke(captureChannels.reveal, z.uuid().parse(id)),
+  openKeyboardSettings: () =>
+    ipcRenderer.invoke(captureChannels.keyboardSettings),
+  setPrintScreenEnabled: async (enabled) =>
+    captureStateSchema.parse(
+      await ipcRenderer.invoke(
+        captureChannels.printScreen,
+        z.boolean().parse(enabled),
+      ),
+    ),
+  onCapturesChanged(listener) {
+    const handler = () => listener();
+    ipcRenderer.on(captureChannels.changed, handler);
+    return () => ipcRenderer.removeListener(captureChannels.changed, handler);
+  },
   configuration: async () =>
     configurationSchema.parse(
       await ipcRenderer.invoke(bridgeChannels.configuration),

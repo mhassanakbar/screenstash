@@ -61,3 +61,50 @@ button:focus-visible {
   align-items: center;
   gap: 12px;
 }
+.section-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+.section-heading span,
+.storage-note,
+.shortcut-help {
+  font-size: 13px;
+  color: #59675f;
+}
+kbd {
+  font:
+    12px ui-monospace,
+    monospace;
+  background: #f0f4f1;
+  border: 1px solid #dce3dd;
+  border-radius: 4px;
+  padding: 3px 6px;
+}
+.capture-list {
+  list-style: none;
+  padding: 0;
+  margin-bottom: 0;
+}
+.capture-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  border-top: 1px solid #e5ebe6;
+  padding: 18px 0;
+}
+.capture-list p {
+  font-size: 13px;
+  margin: 5px 0;
+}
+@media (max-width: 720px) {
+  main {
+    padding: 20px;
+  }
+  .actions,
+  .capture-list li {
+    flex-wrap: wrap;
+  }
+}

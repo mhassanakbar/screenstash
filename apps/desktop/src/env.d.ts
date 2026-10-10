@@ -2,4 +2,5 @@ declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string | undefined;
 declare const MAIN_WINDOW_VITE_NAME: string;
 interface Window {
   readonly screenstash: import('./contracts/bridge').DesktopBridge;
+  readonly screenstashRegion: import('./contracts/capture').RegionBridge;
 }

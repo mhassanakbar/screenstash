@@ -26,6 +26,11 @@ const config: ForgeConfig = {
           config: 'vite.preload.config.ts',
           target: 'preload',
         },
+        {
+          entry: 'src/preload/region.ts',
+          config: 'vite.region-preload.config.ts',
+          target: 'preload',
+        },
       ],
       renderer: [{ name: 'main_window', config: 'vite.renderer.config.ts' }],
     }),

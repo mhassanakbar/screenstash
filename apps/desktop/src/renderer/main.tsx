@@ -8,9 +8,8 @@ import {
   useAuth,
 } from '@clerk/electron/react';
 import { APP_NAME } from '@screenstash/shared';
-import type { z } from 'zod';
-import type { captureProbeSchema } from '../contracts/bridge';
 import './styles.css';
+import { CaptureWorkspace } from './capture';
 
 const root = document.getElementById('root');
 if (!root) throw new Error('Renderer root is missing');
@@ -79,64 +78,20 @@ function Authentication() {
   );
 }
 function LocalShell() {
-  const [probe, setProbe] = useState<z.infer<typeof captureProbeSchema> | null>(
-      null,
-    ),
-    [probing, setProbing] = useState(false),
-    [message, setMessage] = useState('');
   return (
     <main>
       <header>
         <p className="eyebrow">Your private screenshot workspace</p>
         <h1>{APP_NAME}</h1>
-        <p>Desktop setup</p>
-      </header>
-      <section className="panel">
-        <h2>Display capture check</h2>
-        <p>
-          Check the resolution of the display containing your pointer. This
-          check does not save or upload an image.
-        </p>
-        <button
-          disabled={probing}
-          onClick={async () => {
-            setProbing(true);
-            setMessage('');
-            try {
-              setProbe(await window.screenstash.probeCapture());
-            } catch {
-              setMessage('The display could not be checked. Please try again.');
-            } finally {
-              setProbing(false);
-            }
-          }}
-        >
-          {probing ? 'Checking display…' : 'Check display capture'}
-        </button>
-        {probe && (
-          <p role="status">
-            {probe.actualWidth} × {probe.actualHeight} pixels ·{' '}
-            {Math.round(probe.scaleFactor * 100)}% scaling ·{' '}
-            {probe.nativeResolution
-              ? 'Native resolution verified'
-              : 'Native resolution requires a fallback'}
-          </p>
-        )}
-        {message && <p role="alert">{message}</p>}
-      </section>
-      <section className="panel">
-        <h2>Local capture works independently</h2>
-        <p>
-          Capture, OCR and queue controls are the next implementation steps.
-          Account loading will not block this local workspace.
-        </p>
+        <p>Capture now. Find it later.</p>
         <button
           className="secondary"
           onClick={() => void window.screenstash.openVault()}
         >
           Open web vault
         </button>
-      </section>
+      </header>
+      <CaptureWorkspace />
       <div id="account-root" />
     </main>
   );
