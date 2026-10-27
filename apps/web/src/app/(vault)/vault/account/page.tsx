@@ -1,8 +1,14 @@
 import { UserProfile } from '@clerk/nextjs';
 export default function AccountPage() {
   return (
-    <section>
-      <h1 className="mb-8 text-3xl font-semibold tracking-tight">Account</h1>
+    <section className="account-page">
+      <div className="vault-heading mb-8">
+        <div>
+          <p className="eyebrow">Workspace settings</p>
+          <h1>Account</h1>
+          <p>Manage your profile and sign-in details.</p>
+        </div>
+      </div>
       <UserProfile routing="hash" />
     </section>
   );

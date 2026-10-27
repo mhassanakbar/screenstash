@@ -71,27 +71,32 @@ export default async function SharedScreenshot({
 }) {
   const share = await lookup((await params).token);
   return (
-    <main className="mx-auto max-w-6xl px-5 py-12 sm:px-10">
-      <a href="/" className="eyebrow">
-        ScreenStash
-      </a>
-      <h1 className="mt-6 break-words text-3xl font-semibold tracking-tight">
-        {share.publicTitle}
-      </h1>
-      <p className="mt-3 text-neutral-500">Shared screenshot</p>
-      <img
-        src={share.imageUrl}
-        alt={share.publicTitle}
-        width={share.width}
-        height={share.height}
-        className="mt-8 h-auto max-h-[75vh] w-full rounded-xl border border-neutral-200 bg-white object-contain"
-      />
-      <a
-        className="mt-6 inline-block font-medium text-emerald-800 underline underline-offset-4"
-        href={share.imageUrl}
-      >
-        View original PNG
-      </a>
+    <main className="share-page">
+      <div className="share-page-header">
+        <a href="/" className="brand">
+          <span className="brand-mark" aria-hidden="true" />
+          ScreenStash
+        </a>
+        <span className="share-page-label">Shared capture</span>
+      </div>
+      <h1>{share.publicTitle}</h1>
+      <p>Shared screenshot</p>
+      <div className="share-image">
+        <img
+          src={share.imageUrl}
+          alt={share.publicTitle}
+          width={share.width}
+          height={share.height}
+        />
+      </div>
+      <div className="share-page-footer">
+        <a
+          className="inline-flex rounded-[9px] bg-[#d45535] px-5 py-3 text-[13px] font-semibold text-white hover:bg-[#b84327] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d45535]"
+          href={share.imageUrl}
+        >
+          View original PNG
+        </a>
+      </div>
     </main>
   );
 }

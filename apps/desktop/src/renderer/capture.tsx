@@ -1,6 +1,29 @@
 import { useEffect, useState } from 'react';
 import type { z } from 'zod';
 import type { captureStateSchema, CaptureCode } from '../contracts/capture';
+import { isTerminalUploadError } from '../contracts/capture';
+import type { DesktopBridge } from '../contracts/bridge';
+import type {
+  DesktopSettings,
+  DesktopSettingsPatch,
+  QueueBridge,
+} from '../contracts/queue';
+import { Icon } from './icons';
+
+const desktop = window.screenstash as DesktopBridge & QueueBridge;
+const statusLabels: Record<string, string> = {
+  pending: 'Queued',
+  processing: 'Recognizing text',
+  complete: 'Complete',
+  authorizing: 'Preparing upload',
+  uploading: 'Uploading image',
+  finalizing: 'Confirming upload',
+  retry_wait: 'Waiting to retry',
+  auth_required: 'Reconnect your account',
+  paused: 'Paused',
+  failed: 'Needs attention',
+  synced: 'Synced to vault',
+};
 
 const errors: Record<CaptureCode, string> = {
   CAPTURE_BUSY: 'A capture is already in progress.',
@@ -18,17 +41,75 @@ export function CaptureWorkspace() {
   const [state, setState] = useState<z.infer<typeof captureStateSchema> | null>(
     null,
   );
+  const [stateLoadError, setStateLoadError] = useState(false);
   const [message, setMessage] = useState(''),
     [loading, setLoading] = useState(false);
   const [setupOpen, setSetupOpen] = useState(false);
   const [setupBusy, setSetupBusy] = useState(false);
   const [setupMessage, setSetupMessage] = useState('');
+  const [settings, setSettings] = useState<DesktopSettings | null>(null);
+  const [settingsBusy, setSettingsBusy] = useState(false);
+  const [settingsMessage, setSettingsMessage] = useState('');
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const [queueMessage, setQueueMessage] = useState('');
+  const updateSettings = async (patch: DesktopSettingsPatch) => {
+    setSettingsBusy(true);
+    setSettingsMessage('');
+    try {
+      setSettings(await desktop.updateSettings(patch));
+      setSettingsMessage('Settings saved.');
+    } catch {
+      setSettingsMessage(
+        'Settings could not be saved. Startup requires the installed Windows app.',
+      );
+    } finally {
+      setSettingsBusy(false);
+    }
+  };
+  const queueAction = async (id: string, action: 'retry' | 'upload') => {
+    setPendingAction(id);
+    setQueueMessage('');
+    try {
+      if (action === 'retry') await desktop.retryCapture(id);
+      else await desktop.uploadNow(id);
+      setQueueMessage(
+        'Request queued. Processing resumes when your account is connected and processing is not paused.',
+      );
+    } catch {
+      setQueueMessage(
+        'This request could not be completed. Reconnect your account and try again.',
+      );
+    } finally {
+      setPendingAction(null);
+    }
+  };
+  useEffect(() => {
+    let active = true;
+    let request = 0;
+    const refresh = () => {
+      const current = ++request;
+      void desktop
+        .settings()
+        .then((value) => {
+          if (active && current === request) setSettings(value);
+        })
+        .catch(() => {
+          if (active && current === request)
+            setSettingsMessage('Settings could not be loaded.');
+        });
+    };
+    const unsubscribe = desktop.onSettingsChanged(refresh);
+    refresh();
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, []);
   const configurePrintScreen = async (enabled: boolean) => {
     setSetupBusy(true);
     setSetupMessage('');
     try {
       const value = await window.screenstash.setPrintScreenEnabled(enabled);
-      setState(value);
       const available = value.shortcuts
         .filter((shortcut) => shortcut.accelerator.includes('PrintScreen'))
         .every((shortcut) => shortcut.registered);
@@ -47,14 +128,21 @@ export function CaptureWorkspace() {
   };
   useEffect(() => {
     let active = true;
+    let request = 0;
     const refresh = () => {
+      const current = ++request;
+      setState(null);
+      setStateLoadError(false);
       void window.screenstash
         .captureState()
         .then((value) => {
-          if (active) setState(value);
+          if (active && current === request) setState(value);
         })
         .catch(() => {
-          if (active) setMessage('Local screenshots could not be loaded.');
+          if (active && current === request) {
+            setStateLoadError(true);
+            setMessage('Local screenshots could not be loaded.');
+          }
         });
     };
     const unsubscribe = window.screenstash.onCapturesChanged(refresh);
@@ -84,49 +172,91 @@ export function CaptureWorkspace() {
   };
   return (
     <>
-      <section className="panel" aria-label="Screenshot capture">
-        <h2>Take a screenshot</h2>
-        <p>
+      <section
+        className="capture-panel"
+        id="capture"
+        aria-label="Screenshot capture"
+      >
+        <div className="capture-panel-top">
+          <span className="capture-symbol">
+            <Icon name="capture" size={22} />
+          </span>
+          <span className="section-kicker">READY WHEN YOU ARE</span>
+        </div>
+        <h2>
+          Capture your screen.
+          <br />
+          <em>Keep your flow.</em>
+        </h2>
+        <p className="capture-intro">
           Capture the display containing your pointer, or select a region on it.
           Screenshots save locally while offline or signed out.
         </p>
-        <div className="actions">
+        <div className="capture-actions">
           <button
+            className="capture-action capture-action-primary"
+            aria-label="Capture display"
             disabled={loading || state?.busy}
             onClick={() => void capture('display')}
           >
-            Capture display
+            <span className="action-icon">
+              <Icon name="capture" size={24} />
+            </span>
+            <span>
+              Capture display<small>Everything in view</small>
+            </span>
+            <Icon name="arrow" size={18} />
           </button>
           <button
-            className="secondary"
+            className="capture-action capture-action-secondary"
+            aria-label="Select region"
             disabled={loading || state?.busy}
             onClick={() => void capture('region')}
           >
-            Select region
+            <span className="action-icon">
+              <Icon name="region" size={24} />
+            </span>
+            <span>
+              Select region<small>Just what matters</small>
+            </span>
+            <Icon name="arrow" size={18} />
           </button>
         </div>
-        <p className="shortcut-help">
-          {state?.shortcuts.map((shortcut) => (
-            <span key={shortcut.accelerator}>
-              {shortcut.mode === 'display' ? 'Full display' : 'Region'}:{' '}
-              <kbd>
-                {shortcut.accelerator
-                  .replaceAll('Control', 'Ctrl')
-                  .replaceAll('+', ' + ')}
-              </kbd>
-              {!shortcut.registered &&
-                ' (unavailable — another app may be using it)'}
-              <br />
-            </span>
-          ))}
-        </p>
+        <div className="shortcut-help">
+          <span className="shortcut-title">
+            <Icon name="keyboard" size={17} /> KEYBOARD SHORTCUTS
+          </span>
+          <div className="shortcut-values">
+            {state?.shortcuts.map((shortcut) => (
+              <span key={shortcut.accelerator}>
+                {shortcut.mode === 'display' ? 'Full display' : 'Region'}:{' '}
+                <kbd>
+                  {shortcut.accelerator
+                    .replaceAll('Control', 'Ctrl')
+                    .replaceAll('+', ' + ')}
+                </kbd>
+                {!shortcut.registered &&
+                  ' (unavailable — another app may be using it)'}
+                <br />
+              </span>
+            ))}
+          </div>
+        </div>
         {message && <p role="status">{message}</p>}
         {state?.error && !message && <p role="alert">{errors[state.error]}</p>}
         {state?.busy && <p role="status">Capture in progress…</p>}
       </section>
       {state?.printScreen.supported && (
-        <section className="panel" aria-label="Print Screen shortcut setup">
-          <h2>Use Print Screen</h2>
+        <section
+          className="print-panel"
+          aria-label="Print Screen shortcut setup"
+        >
+          <div className="side-heading">
+            <span className="side-icon">
+              <Icon name="keyboard" size={19} />
+            </span>
+            <h2>Use Print Screen</h2>
+          </div>
           <p>
             Print Screen selects a region. Shift + Print Screen captures the
             full display. ScreenStash must be running.
@@ -194,15 +324,31 @@ export function CaptureWorkspace() {
           )}
         </section>
       )}
-      <section className="panel" aria-label="Local screenshots">
+      <section
+        className="queue-panel"
+        id="queue"
+        aria-label="Local screenshots"
+      >
         <div className="section-heading">
-          <h2>Local screenshots</h2>
-          <span>{state?.captures.length ?? 0} saved</span>
+          <div>
+            <p className="section-kicker">YOUR LOCAL LIBRARY</p>
+            <h2>Capture queue</h2>
+          </div>
+          <span className="count-pill">
+            {state?.captures.length ?? 0} saved
+          </span>
         </div>
         <p>
-          Original PNGs are retained on this computer. Cloud upload and text
-          recognition will be connected in the next steps.
+          Original PNGs stay on this computer after sync. Unassigned screenshots
+          remain local; no account is assigned automatically.
         </p>
+        {settings?.paused && (
+          <p className="queue-notice" role="status">
+            Background processing is paused. Resume it in Desktop settings or
+            the tray.
+          </p>
+        )}
+        {queueMessage && <p role="status">{queueMessage}</p>}
         {!!state?.recoveryWarnings && (
           <p role="alert">
             {state.recoveryWarnings} local record(s) need attention. Original
@@ -216,13 +362,41 @@ export function CaptureWorkspace() {
             storage used across accounts.
           </p>
         )}
-        {!state?.captures.length && (
-          <p>Your saved screenshots will appear here.</p>
+        {!state && !stateLoadError && (
+          <div className="queue-empty" role="status">
+            <span className="empty-art">
+              <Icon name="image" size={28} />
+            </span>
+            <strong>Loading local screenshots…</strong>
+          </div>
+        )}
+        {state && !state.captures.length && (
+          <div className="queue-empty">
+            <span className="empty-art">
+              <Icon name="image" size={28} />
+            </span>
+            <strong>Nothing in your queue yet</strong>
+            <p>
+              Your saved screenshots will appear here after your first capture.
+            </p>
+          </div>
+        )}
+        {!state && stateLoadError && (
+          <div className="queue-empty error">
+            <span className="empty-art">
+              <Icon name="image" size={28} />
+            </span>
+            <strong>Couldn’t load local screenshots</strong>
+            <p>Local screenshots could not be loaded.</p>
+          </div>
         )}
         <ul className="capture-list">
           {state?.captures.map((item) => (
             <li key={item.id}>
-              <div>
+              <span className="list-image">
+                <Icon name="image" size={22} />
+              </span>
+              <div className="capture-details">
                 <strong>{item.title}</strong>
                 <p>
                   {item.width} × {item.height} pixels ·{' '}
@@ -239,22 +413,157 @@ export function CaptureWorkspace() {
                     : 'Unassigned — stored locally'}
                   {!item.uploadEligible && ' · Too large for cloud upload'}
                 </p>
+                <div
+                  className="capture-statuses"
+                  aria-label="Processing status"
+                >
+                  <span className={`status-badge status-${item.ocrStatus}`}>
+                    OCR: {statusLabels[item.ocrStatus] ?? 'Queued'}
+                  </span>
+                  <span
+                    className={`status-badge status-${item.assigned ? item.uploadStatus : 'unassigned'}`}
+                  >
+                    Upload:{' '}
+                    {item.assigned
+                      ? (statusLabels[item.uploadStatus] ?? 'Queued')
+                      : 'Unassigned'}
+                  </span>
+                </div>
+                {item.uploadRetryAt && (
+                  <p>
+                    Next upload attempt:{' '}
+                    {new Date(item.uploadRetryAt).toLocaleString()}
+                  </p>
+                )}
+                {item.uploadAttempts > 0 && (
+                  <p>Upload attempts: {item.uploadAttempts}</p>
+                )}
+                {item.ocrTruncated && (
+                  <p>
+                    Recognized text reached the supported limit; the original
+                    image is unchanged.
+                  </p>
+                )}
+                {isTerminalUploadError(item.uploadError) && (
+                  <p className="queue-error">
+                    Cloud upload is unavailable for this capture. Your local
+                    original is retained.
+                  </p>
+                )}
+                {!isTerminalUploadError(item.uploadError) &&
+                  (String(item.ocrStatus) === 'failed' ||
+                    String(item.uploadStatus) === 'failed') && (
+                    <p className="queue-error">
+                      Processing failed. Your original is retained; retry when
+                      ready.
+                    </p>
+                  )}
               </div>
-              <button
-                className="secondary"
-                onClick={() =>
-                  void window.screenstash
-                    .revealCapture(item.id)
-                    .catch(() =>
-                      setMessage('This local file is missing or damaged.'),
-                    )
-                }
-              >
-                Show in folder
-              </button>
+              <div className="queue-actions">
+                {!isTerminalUploadError(item.uploadError) &&
+                  (String(item.ocrStatus) === 'failed' ||
+                    ['failed', 'retry_wait', 'auth_required'].includes(
+                      item.uploadStatus,
+                    )) && (
+                    <button
+                      className="secondary"
+                      disabled={
+                        pendingAction !== null || settings?.paused || !settings
+                      }
+                      onClick={() => void queueAction(item.id, 'retry')}
+                    >
+                      Retry processing
+                    </button>
+                  )}
+                {!isTerminalUploadError(item.uploadError) &&
+                  item.assigned &&
+                  item.uploadEligible &&
+                  [
+                    'pending',
+                    'paused',
+                    'retry_wait',
+                    'failed',
+                    'auth_required',
+                  ].includes(item.uploadStatus) && (
+                    <button
+                      disabled={
+                        pendingAction !== null || settings?.paused || !settings
+                      }
+                      onClick={() => void queueAction(item.id, 'upload')}
+                    >
+                      Upload now
+                    </button>
+                  )}
+                <button
+                  className="secondary"
+                  onClick={() =>
+                    void window.screenstash
+                      .revealCapture(item.id)
+                      .catch(() =>
+                        setMessage('This local file is missing or damaged.'),
+                      )
+                  }
+                >
+                  Show in folder
+                </button>
+              </div>
             </li>
           ))}
         </ul>
+      </section>
+      <section
+        className="settings-panel"
+        id="desktop-settings"
+        aria-label="Desktop settings"
+        tabIndex={-1}
+      >
+        <p className="section-kicker">MAKE IT YOURS</p>
+        <h2>Desktop settings</h2>
+        <p>
+          Closing this window keeps ScreenStash running in the tray. Use the
+          tray menu to quit.
+        </p>
+        <div className="settings-controls" aria-busy={settingsBusy}>
+          <label>
+            <input
+              type="checkbox"
+              checked={settings?.autoUpload ?? true}
+              disabled={!settings || settingsBusy}
+              onChange={(event) =>
+                void updateSettings({ autoUpload: event.target.checked })
+              }
+            />{' '}
+            Automatically upload new screenshots
+          </label>
+          <p>
+            Turning this off keeps captures local until you choose Upload now.
+          </p>
+          <label>
+            <input
+              type="checkbox"
+              checked={settings?.paused ?? false}
+              disabled={!settings || settingsBusy}
+              onChange={(event) =>
+                void updateSettings({ paused: event.target.checked })
+              }
+            />{' '}
+            Pause background processing
+          </label>
+          <p>Local capture stays available while processing is paused.</p>
+          <label>
+            <input
+              type="checkbox"
+              checked={settings?.startup ?? false}
+              disabled={!settings || settingsBusy}
+              onChange={(event) =>
+                void updateSettings({ startup: event.target.checked })
+              }
+            />{' '}
+            Start ScreenStash in the tray when I sign in to Windows
+          </label>
+          <p>Optional. Off by default; requires the installed Windows app.</p>
+        </div>
+        {settingsMessage && <p role="status">{settingsMessage}</p>}
       </section>
     </>
   );

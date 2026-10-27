@@ -9,6 +9,7 @@ export default tseslint.config(
       '**/.next/**',
       '**/.vite/**',
       '**/out/**',
+      '**/resources/ocr/**',
       '**/next-env.d.ts',
     ],
   },

@@ -1,19 +1,24 @@
 'use client';
 export default function ShareError({ reset }: { reset: () => void }) {
   return (
-    <main className="mx-auto max-w-xl px-6 py-20">
-      <h1 className="text-2xl font-semibold">
-        Sharing is temporarily unavailable
-      </h1>
-      <p className="mt-4 text-neutral-600">
-        Please try loading this screenshot again.
-      </p>
-      <button
-        onClick={reset}
-        className="mt-6 rounded-lg bg-emerald-800 px-5 py-3 text-white"
-      >
-        Try again
-      </button>
+    <main className="share-page">
+      <div className="share-page-header">
+        <a href="/" className="brand">
+          <span className="brand-mark" aria-hidden="true" />
+          ScreenStash
+        </a>
+      </div>
+      <div className="share-message">
+        <span className="eyebrow">Temporary issue</span>
+        <h1>Sharing is temporarily unavailable</h1>
+        <p>Please try loading this screenshot again.</p>
+        <button
+          onClick={reset}
+          className="mt-6 rounded-[9px] bg-[#d45535] px-5 py-3 text-[13px] font-semibold text-white hover:bg-[#b84327] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d45535]"
+        >
+          Try again
+        </button>
+      </div>
     </main>
   );
 }

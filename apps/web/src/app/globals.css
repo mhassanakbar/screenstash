@@ -1,15 +1,22 @@
 @import 'tailwindcss';
+@import './vault.css';
 
 :root {
-  --background: #fafbf9;
-  --foreground: #1b2420;
-  --radius: 0.75rem;
+  --background: #f6f5f1;
+  --foreground: #242522;
+  --paper: #ffffff;
+  --muted: #6b6e65;
+  --line: #e5e4df;
+  --accent: #bf482b;
+  --accent-dark: #b84327;
+  --radius: 0.875rem;
 }
 body {
   margin: 0;
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: 'Segoe UI', Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
 button,
 a,
@@ -19,13 +26,16 @@ input {
 button {
   cursor: pointer;
 }
+button:disabled {
+  cursor: not-allowed;
+}
 .eyebrow {
-  color: #047857;
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: 0.14em;
+  color: var(--accent);
+  font-size: 0.69rem;
+  font-weight: 750;
+  letter-spacing: 0.17em;
   text-transform: uppercase;
 }
 ::selection {
-  background: #d1fae5;
+  background: #f6d2c6;
 }

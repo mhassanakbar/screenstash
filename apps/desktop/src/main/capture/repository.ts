@@ -38,6 +38,28 @@ export class CaptureRepository {
   private records = new Map<string, LocalCapture>();
   private writer: Promise<unknown> = Promise.resolve();
   private identity: CaptureIdentity | null = null;
+  private listeners = new Set<() => void>();
+  subscribe(listener: () => void) {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+  private changed() {
+    for (const listener of this.listeners) {
+      try {
+        listener();
+      } catch {
+        continue;
+      }
+    }
+  }
+  async flush() {
+    await this.writer;
+  }
+  async drain() {
+    await this.flush();
+  }
   warnings = 0;
   localBytes = 0;
   constructor(private root: string) {}
@@ -162,6 +184,7 @@ export class CaptureRepository {
     // Clear memory immediately on sign-out; serialized persistence cannot bind a
     // newly started capture to the account that just signed out.
     this.identity = identity ? structuredClone(identity) : null;
+    this.changed();
     return this.serialize(() =>
       writeAtomic(
         path.join(this.root, 'capture-owner.json'),
@@ -219,6 +242,7 @@ export class CaptureRepository {
       await writeAtomic(`${manifest}.bak`, JSON.stringify(record));
       await writeAtomic(manifest, JSON.stringify(record));
       this.records.set(record.id, record);
+      this.changed();
       return this.summary(record);
     });
   }
@@ -252,6 +276,113 @@ export class CaptureRepository {
     const bytes = await this.readImage(record);
     if (digest(bytes) !== record.sha256) throw new Error('Capture damaged');
     return path.join(this.root, 'captures', record.png);
+  }
+  get(id: string) {
+    const record = this.records.get(z.uuid().parse(id));
+    return record && this.visible(record) ? structuredClone(record) : null;
+  }
+  all() {
+    return [...this.records.values()]
+      .filter((record) => this.visible(record))
+      .map((record) => structuredClone(record));
+  }
+  update(
+    id: string,
+    patch: Partial<
+      Pick<
+        LocalCapture,
+        | 'ocrStatus'
+        | 'ocrText'
+        | 'ocrTruncated'
+        | 'ocrError'
+        | 'uploadStatus'
+        | 'uploadStage'
+        | 'uploadMetadataLocked'
+        | 'uploadSessionId'
+        | 'screenshotId'
+        | 'uploadAttempts'
+        | 'uploadRetryAt'
+        | 'uploadError'
+      >
+    >,
+  ) {
+    const changes = structuredClone(patch);
+    const owner = this.currentIdentity();
+    return this.serialize(async () => {
+      const record = this.records.get(z.uuid().parse(id));
+      if (
+        !record ||
+        !this.visible(record) ||
+        owner?.owner.id !== this.identity?.owner.id ||
+        owner?.owner.clerkUserId !== this.identity?.owner.clerkUserId
+      )
+        throw new Error('Capture not available');
+      const allowed = [
+        'ocrStatus',
+        'ocrText',
+        'ocrTruncated',
+        'ocrError',
+        'uploadStatus',
+        'uploadStage',
+        'uploadMetadataLocked',
+        'uploadSessionId',
+        'screenshotId',
+        'uploadAttempts',
+        'uploadRetryAt',
+        'uploadError',
+      ];
+      if (Object.keys(changes).some((key) => !allowed.includes(key)))
+        throw new Error('Immutable capture metadata');
+      const locked =
+        record.uploadMetadataLocked ||
+        record.uploadSessionId !== null ||
+        record.uploadStage !== 'create' ||
+        record.uploadStatus === 'authorizing' ||
+        record.uploadAttempts > 0;
+      if (
+        locked &&
+        (['ocrStatus', 'ocrText', 'ocrTruncated', 'ocrError'] as const).some(
+          (key) => key in changes && changes[key] !== record[key],
+        )
+      )
+        throw new Error('Upload metadata is immutable');
+      if (locked && changes.uploadMetadataLocked === false)
+        throw new Error('Upload metadata is immutable');
+      if (
+        record.uploadSessionId &&
+        changes.uploadSessionId !== undefined &&
+        changes.uploadSessionId !== record.uploadSessionId
+      )
+        throw new Error('Upload session is immutable');
+      if (
+        record.screenshotId &&
+        changes.screenshotId !== undefined &&
+        changes.screenshotId !== record.screenshotId
+      )
+        throw new Error('Screenshot identity is immutable');
+      const updated = localCaptureSchema.parse({ ...record, ...changes });
+      const manifest = path.join(this.root, 'queue', record.id + '.json');
+      await writeAtomic(manifest, JSON.stringify(updated));
+      this.records.set(id, updated);
+      await writeAtomic(manifest + '.bak', JSON.stringify(updated));
+      this.changed();
+      return structuredClone(updated);
+    });
+  }
+  async readVerifiedBytes(id: string) {
+    const record = this.get(id);
+    if (!record) throw new Error('Capture not available');
+    const bytes = await this.readImage(record);
+    if (
+      !this.get(id) ||
+      digest(bytes) !== record.sha256 ||
+      bytes.length !== record.sizeBytes
+    )
+      throw new Error('Capture damaged');
+    return bytes;
+  }
+  readBytes(id: string) {
+    return this.readVerifiedBytes(id);
   }
   private async readImage(record: LocalCapture) {
     const file = path.join(this.root, 'captures', record.png);

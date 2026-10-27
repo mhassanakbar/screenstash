@@ -36,10 +36,22 @@ export class ApiError extends Error {
     message: string,
     public readonly retryable: boolean,
     public readonly requestId?: string,
+    public readonly retryAfterMs?: number,
   ) {
     super(message);
     this.name = 'ApiError';
   }
+}
+export function parseRetryAfter(
+  value: string | null,
+  now = Date.now(),
+): number | undefined {
+  if (!value?.trim()) return undefined;
+  const text = value.trim();
+  const milliseconds = /^[0-9]+$/.test(text)
+    ? Number(text) * 1000
+    : Date.parse(text) - now;
+  return Number.isFinite(milliseconds) ? Math.max(0, milliseconds) : undefined;
 }
 export function createApiClient(options: ApiClientOptions) {
   const baseUrl = options.baseUrl.replace(/\/$/, '');
@@ -53,6 +65,7 @@ export function createApiClient(options: ApiClientOptions) {
     authenticated = true,
   ): Promise<T> {
     const token = authenticated ? await options.getSessionToken?.() : null;
+    signal?.throwIfAborted();
     if (authenticated && !token)
       throw new ApiError(401, 'UNAUTHENTICATED', 'Sign in to continue.', false);
     const response = await transport(`${baseUrl}${route}`, {
@@ -78,13 +91,16 @@ export function createApiClient(options: ApiClientOptions) {
           error.message,
           error.retryable,
           error.requestId,
+          parseRetryAfter(response.headers.get('Retry-After')),
         );
       }
       throw new ApiError(
         response.status,
         'DEPENDENCY_UNAVAILABLE',
         'The service returned an unexpected response.',
-        response.status >= 500,
+        response.status >= 500 || response.status === 429,
+        undefined,
+        parseRetryAfter(response.headers.get('Retry-After')),
       );
     }
     if (!schema) return undefined as T;

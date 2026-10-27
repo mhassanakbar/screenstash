@@ -45,16 +45,13 @@ export function ScreenshotSharing({ id }: { id: string }) {
   const busy = creation.isPending || revocation.isPending;
   const valid = publicTitleSchema.safeParse(title).success;
   return (
-    <section
-      className="mt-8 border-t border-neutral-200 pt-6"
-      aria-label="Public sharing"
-    >
-      <h3 className="font-medium">Public sharing</h3>
-      <p className="mt-2 text-sm text-neutral-600">
+    <section className="detail-panel" aria-label="Public sharing">
+      <h3>Public sharing</h3>
+      <p className="text-[#62645e]">
         Anyone with the link can view and save the image. Only the public title
         appears in the preview. Review the screenshot before sharing it.
       </p>
-      <p className="mt-2 text-sm text-neutral-500">
+      <p className="mt-2 text-[#6b6e65]">
         Revoking a link stops future access. Copies and previews already saved
         by other services may remain.
       </p>
@@ -72,15 +69,12 @@ export function ScreenshotSharing({ id }: { id: string }) {
       ) : (
         <>
           {status.data.active && (
-            <p className="mt-4 text-sm">
+            <p className="notice mt-4">
               An active public link exists. Public title:{' '}
               <strong className="break-words">{status.data.publicTitle}</strong>
             </p>
           )}
-          <label
-            className="mt-4 block text-sm font-medium"
-            htmlFor={`public-title-${id}`}
-          >
+          <label className="field-label mt-5" htmlFor={`public-title-${id}`}>
             Public title
           </label>
           <input
@@ -92,7 +86,8 @@ export function ScreenshotSharing({ id }: { id: string }) {
               setTitle(event.target.value);
               creation.reset();
             }}
-            className="mt-2 w-full rounded-lg border border-neutral-300 px-3 py-2"
+            className="field-control"
+            aria-invalid={!valid}
           />
           <div className="mt-4 flex flex-wrap gap-3">
             {!status.data.active ? (
@@ -125,7 +120,7 @@ export function ScreenshotSharing({ id }: { id: string }) {
             )}
           </div>
           {confirmReplace && (
-            <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4">
+            <div className="notice mt-4">
               <p>
                 The previous link will stop working when a new link is created.
               </p>
@@ -148,17 +143,14 @@ export function ScreenshotSharing({ id }: { id: string }) {
           )}
           {url ? (
             <div className="mt-4">
-              <label
-                htmlFor={`share-link-${id}`}
-                className="text-sm font-medium"
-              >
+              <label htmlFor={`share-link-${id}`} className="field-label">
                 Public link
               </label>
               <input
                 id={`share-link-${id}`}
                 readOnly
                 value={url}
-                className="mt-2 w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm"
+                className="field-control"
                 onFocus={(event) => event.currentTarget.select()}
               />
               <Button

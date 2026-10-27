@@ -9,7 +9,7 @@ import {
 } from '@tanstack/react-query';
 import { useAuth } from '@clerk/nextjs';
 import * as Dialog from '@radix-ui/react-dialog';
-import { Download, ImageIcon, Trash2, X } from 'lucide-react';
+import { Download, ImageIcon, RefreshCw, Trash2, X } from 'lucide-react';
 import { screenshotQuerySchema, type Screenshot } from '@screenstash/shared';
 import { LibraryFilters } from './library-filters';
 import { ScreenshotEditor } from './screenshot-editor';
@@ -46,44 +46,48 @@ export function VaultOverview() {
   });
   const items = library.data?.pages.flatMap((page) => page.items) ?? [];
   return (
-    <section>
-      <div className="flex items-end justify-between gap-4">
+    <section aria-label="Screenshot library">
+      <div className="vault-heading">
         <div>
           <p className="eyebrow">Your private space</p>
-          <h1
-            ref={heading}
-            tabIndex={-1}
-            className="mt-3 text-3xl font-semibold tracking-tight"
-          >
+          <h1 ref={heading} tabIndex={-1}>
             Your library
           </h1>
-          <p className="mt-3 text-neutral-500">
-            Screenshots from your desktop, always within reach.
-          </p>
+          <p>Screenshots from your desktop, always within reach.</p>
         </div>
         <Button
           variant="outline"
+          className="vault-heading-action"
           onClick={() => void library.refetch()}
           disabled={library.isFetching}
         >
+          <RefreshCw size={14} aria-hidden="true" />
           Refresh
         </Button>
       </div>
       <LibraryFilters />
       {!parsed.success ? (
-        <p role="alert" className="mt-8 text-red-700">
+        <p role="alert" className="notice notice-danger mt-6">
           These filters are invalid. Check the dates or clear the filters.
         </p>
       ) : library.isPending ? (
-        <p role="status" className="mt-12 text-neutral-500">
-          Loading your screenshots…
-        </p>
+        <div role="status" className="library-state mt-7">
+          <span className="library-state-icon">
+            <ImageIcon size={22} aria-hidden="true" />
+          </span>
+          <h2>Opening your library</h2>
+          <p>Loading your screenshots…</p>
+        </div>
       ) : library.isError ? (
-        <div
-          role="alert"
-          className="mt-8 rounded-xl border border-red-200 bg-red-50 p-6"
-        >
-          <p>We couldn’t load your library.</p>
+        <div role="alert" className="library-state state-error mt-7">
+          <span className="library-state-icon">
+            <ImageIcon size={22} aria-hidden="true" />
+          </span>
+          <h2>We couldn’t load your library.</h2>
+          <p>
+            There was a problem reaching your screenshots. Try again in a
+            moment.
+          </p>
           <Button
             variant="outline"
             className="mt-4"
@@ -93,17 +97,16 @@ export function VaultOverview() {
           </Button>
         </div>
       ) : items.length === 0 ? (
-        <div className="mt-12 rounded-2xl border border-dashed border-neutral-300 bg-white px-8 py-20 text-center">
-          <ImageIcon
-            className="mx-auto h-9 w-9 text-emerald-700"
-            aria-hidden="true"
-          />
-          <h2 className="mt-5 text-xl font-medium">
+        <div className="library-state mt-7">
+          <span className="library-state-icon">
+            <ImageIcon size={23} aria-hidden="true" />
+          </span>
+          <h2>
             {params.toString()
               ? 'No matching screenshots'
               : 'Your account is connected.'}
           </h2>
-          <p className="mx-auto mt-3 max-w-sm text-neutral-500">
+          <p>
             {params.toString()
               ? 'No screenshots match these filters. Try another search.'
               : 'Capture a screenshot with the desktop app to start your library.'}
@@ -111,7 +114,11 @@ export function VaultOverview() {
         </div>
       ) : (
         <>
-          <div className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <div className="library-section-head">
+            <h2>All captures</h2>
+            <span>{items.length} shown</span>
+          </div>
+          <div className="capture-grid">
             {items.map((image) => (
               <button
                 key={image.id}
@@ -119,33 +126,32 @@ export function VaultOverview() {
                   opener.current = event.currentTarget;
                   setSelected(image);
                 }}
-                className="group overflow-hidden rounded-xl border border-neutral-200 bg-white text-left shadow-sm outline-none transition hover:border-emerald-500 focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:ring-offset-4"
+                className="capture-tile"
                 aria-label={`Open ${image.title}`}
               >
-                <div className="aspect-[4/3] bg-neutral-100 p-3">
+                <div className="capture-preview">
                   <img
                     src={`/api/screenshots/${image.id}/image`}
                     alt={image.title}
                     loading="lazy"
-                    className="h-full w-full object-contain"
                   />
                 </div>
-                <div className="p-4">
-                  <h2 className="truncate font-medium">{image.title}</h2>
-                  <p className="mt-2 text-xs text-neutral-500">
+                <div className="capture-body">
+                  <span className="capture-title">{image.title}</span>
+                  <span className="capture-date">
                     {new Date(image.capturedAt).toLocaleString()}
-                  </p>
+                  </span>
                   {image.ocrStatus === 'failed' && (
-                    <p className="mt-2 text-xs text-amber-700">
+                    <span className="capture-warning">
                       Text recognition unavailable
-                    </p>
+                    </span>
                   )}
                 </div>
               </button>
             ))}
           </div>
           {library.hasNextPage && (
-            <div className="mt-8 text-center">
+            <div className="load-more">
               <Button
                 variant="outline"
                 onClick={() => void library.fetchNextPage()}
@@ -206,20 +212,20 @@ function ScreenshotDetail({
   });
   return (
     <Dialog.Portal>
-      <Dialog.Overlay className="fixed inset-0 z-40 bg-neutral-950/50 backdrop-blur-sm" />
+      <Dialog.Overlay className="detail-overlay" />
       <Dialog.Content
         onCloseAutoFocus={(event) => {
           event.preventDefault();
           restoreFocus();
         }}
-        className="fixed inset-x-3 top-[5vh] z-50 mx-auto max-h-[90vh] max-w-5xl overflow-y-auto rounded-2xl bg-white p-5 shadow-2xl outline-none sm:p-8"
+        className="detail-dialog"
       >
-        <div className="flex items-start justify-between gap-5">
+        <div className="detail-header">
           <div>
-            <Dialog.Title className="break-words text-xl font-semibold">
+            <Dialog.Title className="break-words">
               {detail.data?.title ?? image.title}
             </Dialog.Title>
-            <Dialog.Description className="mt-2 text-sm text-neutral-500">
+            <Dialog.Description>
               {new Date(image.capturedAt).toLocaleString()} · {image.width} ×{' '}
               {image.height} · {(image.sizeBytes / 1024 / 1024).toFixed(1)} MB
             </Dialog.Description>
@@ -230,82 +236,87 @@ function ScreenshotDetail({
             </Button>
           </Dialog.Close>
         </div>
-        <img
-          src={`/api/screenshots/${image.id}/image`}
-          alt={image.title}
-          className="mt-6 max-h-[55vh] w-full rounded-lg bg-neutral-100 object-contain"
-        />
-        <div className="mt-6 flex flex-wrap gap-3">
-          <Button asChild variant="outline">
-            <a href={`/api/screenshots/${image.id}/download`}>
-              <Download className="mr-2 h-4 w-4" />
-              Download PNG
-            </a>
-          </Button>
-          <Button variant="ghost" onClick={() => setConfirming(true)}>
-            <Trash2 className="mr-2 h-4 w-4" />
-            Delete screenshot
-          </Button>
-        </div>
-        {detail.data && <ScreenshotEditor key={image.id} image={detail.data} />}
-        {detail.data && (
-          <ScreenshotSharing key={`share-${image.id}`} id={image.id} />
-        )}
-        {confirming && (
-          <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4">
-            <p className="font-medium">Permanently delete this screenshot?</p>
-            <p className="mt-2 text-sm text-neutral-600">
-              It will leave your library and any public link will stop working.
-            </p>
-            <div className="mt-4 flex gap-3">
-              <Button
-                variant="destructive"
-                onClick={() => deletion.mutate()}
-                disabled={deletion.isPending}
-              >
-                {deletion.isPending ? 'Deleting…' : 'Delete permanently'}
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => setConfirming(false)}
-                disabled={deletion.isPending}
-              >
-                Cancel
-              </Button>
-            </div>
-            {deletion.isError && (
-              <p role="alert" className="mt-3 text-sm text-red-700">
-                We couldn’t delete this screenshot. Please try again.
-              </p>
-            )}
+        <div className="detail-content">
+          <div className="detail-image-wrap">
+            <img src={`/api/screenshots/${image.id}/image`} alt={image.title} />
           </div>
-        )}
-        <section className="mt-8 border-t border-neutral-200 pt-6">
-          <h3 className="font-medium">Recognized text</h3>
-          {detail.isPending ? (
-            <p role="status" className="mt-3 text-sm text-neutral-500">
-              Loading text…
-            </p>
-          ) : detail.isError ? (
-            <p role="alert" className="mt-3 text-sm text-red-700">
-              We couldn’t load the screenshot details.
-            </p>
-          ) : (
-            <>
-              <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-relaxed text-neutral-600">
-                {detail.data.ocrText ||
-                  (image.ocrStatus === 'failed'
-                    ? 'Text recognition failed for this screenshot.'
-                    : 'No text was found in this screenshot.')}
+          <div className="detail-actions">
+            <Button asChild variant="outline">
+              <a href={`/api/screenshots/${image.id}/download`}>
+                <Download className="mr-2 h-4 w-4" />
+                Download PNG
+              </a>
+            </Button>
+            <Button variant="ghost" onClick={() => setConfirming(true)}>
+              <Trash2 className="mr-2 h-4 w-4" />
+              Delete screenshot
+            </Button>
+          </div>
+          {confirming && (
+            <div className="notice notice-danger mt-4">
+              <p className="font-medium">Permanently delete this screenshot?</p>
+              <p className="mt-2 text-sm text-neutral-600">
+                It will leave your library and any public link will stop
+                working.
               </p>
-              {detail.data.ocrTruncated && (
-                <p className="mt-3 text-xs text-amber-700">
-                  Recognized text was shortened to fit the storage limit.
+              <div className="mt-4 flex gap-3">
+                <Button
+                  variant="destructive"
+                  onClick={() => deletion.mutate()}
+                  disabled={deletion.isPending}
+                >
+                  {deletion.isPending ? 'Deleting…' : 'Delete permanently'}
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setConfirming(false)}
+                  disabled={deletion.isPending}
+                >
+                  Cancel
+                </Button>
+              </div>
+              {deletion.isError && (
+                <p role="alert" className="mt-3 text-sm text-red-700">
+                  We couldn’t delete this screenshot. Please try again.
                 </p>
               )}
-            </>
+            </div>
           )}
-        </section>
+          <div className="detail-columns">
+            {detail.data && (
+              <ScreenshotEditor key={image.id} image={detail.data} />
+            )}
+            {detail.data && (
+              <ScreenshotSharing key={`share-${image.id}`} id={image.id} />
+            )}
+          </div>
+          <section className="detail-panel detail-ocr">
+            <h3>Recognized text</h3>
+            {detail.isPending ? (
+              <p role="status" className="mt-3 text-sm text-neutral-500">
+                Loading text…
+              </p>
+            ) : detail.isError ? (
+              <p role="alert" className="mt-3 text-sm text-red-700">
+                We couldn’t load the screenshot details.
+              </p>
+            ) : (
+              <>
+                <p className="detail-ocr-text">
+                  {detail.data.ocrText ||
+                    (image.ocrStatus === 'failed'
+                      ? 'Text recognition failed for this screenshot.'
+                      : 'No text was found in this screenshot.')}
+                </p>
+                {detail.data.ocrTruncated && (
+                  <p className="mt-3 text-xs text-amber-700">
+                    Recognized text was shortened to fit the storage limit.
+                  </p>
+                )}
+              </>
+            )}
+          </section>
+        </div>
       </Dialog.Content>
     </Dialog.Portal>
   );

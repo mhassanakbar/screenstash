@@ -7,16 +7,20 @@
   "private": true,
   "main": ".vite/build/main.cjs",
   "scripts": {
-    "dev": "electron-forge start",
-    "build": "electron-forge package",
+    "prepare:ocr": "node ../../scripts/prepare-desktop-ocr.mjs",
+    "dev": "pnpm prepare:ocr && electron-forge start",
+    "build": "pnpm prepare:ocr && electron-forge package",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "make": "electron-forge make"
+    "make": "pnpm prepare:ocr && electron-forge make"
   },
   "dependencies": {
     "@clerk/electron": "0.1.0",
+    "@tesseract.js-data/eng": "1.0.0",
     "electron-squirrel-startup": "1.0.1",
     "electron-store": "8.2.0",
+    "tesseract.js": "6.0.1",
+    "tesseract.js-core": "6.0.0",
     "zod": "4.6.5"
   },
   "devDependencies": {

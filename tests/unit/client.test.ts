@@ -1,8 +1,34 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createApiClient, ApiError } from '@screenstash/api-client';
+import {
+  createApiClient,
+  ApiError,
+  parseRetryAfter,
+} from '@screenstash/api-client';
 import { randomUUID } from 'node:crypto';
 
 describe('API transport', () => {
+  it('parses Retry-After seconds and dates without retaining headers', () => {
+    const now = Date.parse('2026-10-26T10:00:00Z');
+    expect(parseRetryAfter('120', now)).toBe(120000);
+    expect(parseRetryAfter('Mon, 26 Oct 2026 10:02:00 GMT', now)).toBe(120000);
+    expect(parseRetryAfter('Mon, 26 Oct 2026 09:59:00 GMT', now)).toBe(0);
+    expect(parseRetryAfter('not a date', now)).toBeUndefined();
+    expect(parseRetryAfter(null, now)).toBeUndefined();
+  });
+  it('does not send an acquired token after cancellation', async () => {
+    const controller = new AbortController();
+    const transport = vi.fn();
+    const client = createApiClient({
+      baseUrl: '',
+      fetch: transport,
+      getSessionToken: async () => {
+        controller.abort();
+        return 'secret';
+      },
+    });
+    await expect(client.me(controller.signal)).rejects.toThrow();
+    expect(transport).not.toHaveBeenCalled();
+  });
   it('does not request private data without a session token', async () => {
     const transport = vi.fn();
     const client = createApiClient({ baseUrl: '/api-host', fetch: transport });

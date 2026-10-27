@@ -14,9 +14,47 @@ import {
   captureStateSchema,
 } from '../contracts/capture';
 import { z } from 'zod';
+import {
+  queueChannels,
+  desktopSettingsSchema,
+  desktopSettingsPatchSchema,
+  type QueueBridge,
+} from '../contracts/queue';
 
 exposeClerkBridge();
-const bridge: DesktopBridge = {
+const bridge: DesktopBridge & QueueBridge = {
+  settings: async () =>
+    desktopSettingsSchema.parse(
+      await ipcRenderer.invoke(queueChannels.settings),
+    ),
+  updateSettings: async (patch) =>
+    desktopSettingsSchema.parse(
+      await ipcRenderer.invoke(
+        queueChannels.updateSettings,
+        desktopSettingsPatchSchema.parse(patch),
+      ),
+    ),
+  retryCapture: async (id) =>
+    z
+      .void()
+      .parse(
+        await ipcRenderer.invoke(
+          queueChannels.retryCapture,
+          z.uuid().parse(id),
+        ),
+      ),
+  uploadNow: async (id) =>
+    z
+      .void()
+      .parse(
+        await ipcRenderer.invoke(queueChannels.uploadNow, z.uuid().parse(id)),
+      ),
+  onSettingsChanged(listener) {
+    const handler = () => listener();
+    ipcRenderer.on(queueChannels.settingsChanged, handler);
+    return () =>
+      ipcRenderer.removeListener(queueChannels.settingsChanged, handler);
+  },
   appName: 'ScreenStash',
   capture: async (mode) =>
     captureOutcomeSchema.parse(

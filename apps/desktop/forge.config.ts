@@ -6,6 +6,7 @@ import { VitePlugin } from '@electron-forge/plugin-vite';
 const config: ForgeConfig = {
   packagerConfig: {
     asar: true,
+    extraResource: ['resources/ocr'],
     executableName: 'ScreenStash',
     protocols: [{ name: 'ScreenStash', schemes: ['screenstash'] }],
   },

@@ -46,12 +46,15 @@ export function LibraryFilters() {
     for (const tag of ids) next.append('tagId', tag);
     router.replace(`${pathname}?${next}`, { scroll: false });
   }
-  const inputClass =
-    'mt-2 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-700';
+  const inputClass = 'field-control';
   return (
-    <div className="mt-8 rounded-xl border border-neutral-200 bg-white p-5">
-      <div className="grid gap-4 sm:grid-cols-[2fr_1fr_1fr]">
-        <label className="text-sm font-medium">
+    <div className="filter-panel">
+      <div className="filter-panel-head">
+        <h2>Find a capture</h2>
+        <span>Search your private library</span>
+      </div>
+      <div className="filter-grid">
+        <label className="field-label">
           Search screenshots
           <input
             type="search"
@@ -62,7 +65,7 @@ export function LibraryFilters() {
             className={inputClass}
           />
         </label>
-        <label className="text-sm font-medium">
+        <label className="field-label">
           From (UTC)
           <input
             type="date"
@@ -76,7 +79,7 @@ export function LibraryFilters() {
             className={inputClass}
           />
         </label>
-        <label className="text-sm font-medium">
+        <label className="field-label">
           Before (UTC)
           <input
             type="date"
@@ -91,7 +94,8 @@ export function LibraryFilters() {
           />
         </label>
       </div>
-      <div className="mt-4 flex flex-wrap items-center gap-2">
+      <div className="filter-tags">
+        {!!tags.data?.length && <span className="filter-tags-label">Tags</span>}
         {tags.data?.map((tag) => (
           <Button
             key={tag.id}
@@ -116,7 +120,7 @@ export function LibraryFilters() {
         )}
       </div>
       {tags.isError && (
-        <p role="alert" className="mt-3 text-sm text-red-700">
+        <p role="alert" className="notice notice-danger mt-4">
           We couldn’t load tag filters.
         </p>
       )}

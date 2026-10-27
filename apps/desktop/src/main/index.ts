@@ -34,6 +34,12 @@ import { probeDisplay } from './capture/probe';
 import { CaptureRepository } from './capture/repository';
 import { CaptureController } from './capture/controller';
 import { captureChannels, captureModeSchema } from '../contracts/capture';
+import { queueChannels, desktopSettingsPatchSchema } from '../contracts/queue';
+import { DesktopSettingsStore } from './settings';
+import { createDesktopTray } from './tray';
+import { SyncCoordinator } from './sync/coordinator';
+import { LocalOcrQueue } from './ocr/queue';
+import { OfflineOcr, LocalOcrRecognizer, ocrResourceDirectory } from './ocr';
 
 app.setName('ScreenStash');
 if (
@@ -65,6 +71,10 @@ const authenticationConfigured = Boolean(
 const broker = new TokenBroker(() => window?.webContents);
 let probeRunning = false;
 let captures: CaptureController | undefined;
+let quitting = false;
+let quitReady = false;
+let shutdown: () => Promise<void> = async () => {};
+let tray: ReturnType<typeof createDesktopTray> | undefined;
 function trusted(event: IpcMainInvokeEvent) {
   if (
     !window ||
@@ -121,10 +131,19 @@ if (primary) {
     window?.show();
     window?.focus();
   });
-  app.on('before-quit', () => {
+  app.on('before-quit', (event) => {
+    if (quitReady) return;
+    event.preventDefault();
+    if (quitting) return;
+    quitting = true;
     captures?.dispose();
     broker.invalidate();
-    clerk.cleanup();
+    void shutdown().finally(() => {
+      tray?.destroy();
+      clerk.cleanup();
+      quitReady = true;
+      app.quit();
+    });
   });
   void app
     .whenReady()
@@ -174,6 +193,21 @@ if (primary) {
       });
       const repository = new CaptureRepository(app.getPath('userData'));
       await repository.initialize();
+      await repository.setIdentity(null);
+      const settings = new DesktopSettingsStore();
+      settings.restoreStartup();
+      const sync = new SyncCoordinator({
+        repository,
+        baseUrl: apiOrigin,
+        getSessionToken: () => broker.request(),
+        automatic: settings.get().autoUpload,
+        paused: settings.get().paused,
+        onChanged: () => captures?.changed(),
+      });
+      shutdown = async () => {
+        await sync.stop();
+        await repository.flush();
+      };
       const shortcutSettings = new Store<{ printScreenEnabled: boolean }>({
         name: 'capture-shortcuts',
         defaults: { printScreenEnabled: false },
@@ -191,6 +225,68 @@ if (primary) {
         () => probeRunning,
       );
       captures.initialize();
+      const ocr = new LocalOcrQueue(
+        repository,
+        new LocalOcrRecognizer(
+          new OfflineOcr({
+            resourceDirectory: ocrResourceDirectory({
+              isPackaged: app.isPackaged,
+              resourcesPath: process.resourcesPath,
+              appPath: app.getAppPath(),
+            }),
+          }),
+        ),
+        () => captures?.changed(),
+      );
+      ocr.setPaused(settings.get().paused);
+      const unsubscribeProcessing = repository.subscribe(() => {
+        ocr.wake();
+        captures?.changed();
+      });
+      const processingTimer = setInterval(() => ocr.wake(), 2000);
+      processingTimer.unref();
+      shutdown = async () => {
+        clearInterval(processingTimer);
+        unsubscribeProcessing();
+        await Promise.allSettled([sync.stop(), ocr.stop()]);
+        await repository.flush();
+      };
+      const applySettings = (value: unknown) => {
+        const next = settings.update(desktopSettingsPatchSchema.parse(value));
+        if (next.paused) sync.pause();
+        void sync.setAutomatic(next.autoUpload).catch(() => {});
+        if (!next.paused) void sync.resume().catch(() => {});
+        ocr.setPaused(next.paused);
+        tray?.update(next);
+        if (window && !window.isDestroyed())
+          window.webContents.send(queueChannels.settingsChanged);
+        captures?.changed();
+        return next;
+      };
+      registerHandler(queueChannels.settings, () => settings.get());
+      registerHandler(queueChannels.updateSettings, (_event, value) =>
+        applySettings(value),
+      );
+      registerHandler(queueChannels.retryCapture, async (_event, value) => {
+        const id = z.uuid().parse(value);
+        const record = repository.get(id);
+        if (!record) throw new Error('Capture not available');
+        if (
+          record.ocrStatus === 'failed' &&
+          !record.uploadMetadataLocked &&
+          !record.uploadSessionId &&
+          record.uploadAttempts === 0
+        ) {
+          await repository.update(id, { ocrStatus: 'pending', ocrError: null });
+        } else {
+          void sync.retry(id).catch(() => captures?.changed());
+        }
+      });
+      registerHandler(queueChannels.uploadNow, (_event, value) => {
+        const id = z.uuid().parse(value);
+        if (!repository.get(id)) throw new Error('Capture not available');
+        void sync.uploadNow(id).catch(() => captures?.changed());
+      });
       registerHandler(captureChannels.start, (_event, mode) => {
         if (probeRunning) return { status: 'failed', code: 'CAPTURE_BUSY' };
         return captures!.capture(captureModeSchema.parse(mode));
@@ -216,7 +312,9 @@ if (primary) {
       );
       registerHandler(bridgeChannels.invalidate, async () => {
         broker.invalidate();
-        await repository.setIdentity(null);
+        const persisted = repository.setIdentity(null);
+        await sync.identityChanged();
+        await persisted;
         captures!.changed();
       });
       registerHandler(bridgeChannels.authenticate, async () => {
@@ -240,6 +338,7 @@ if (primary) {
         const identity = identitySchema.parse({ owner, device });
         await repository.setIdentity(identity);
         if (epoch !== broker.epoch()) throw new Error('Identity changed');
+        void sync.identityChanged().catch(() => {});
         captures!.changed();
         return identity;
       });
@@ -269,13 +368,20 @@ if (primary) {
         minWidth: 680,
         minHeight: 520,
         title: 'ScreenStash',
-        show: process.env.SCREENSTASH_ACCEPTANCE !== '1',
+        show:
+          process.env.SCREENSTASH_ACCEPTANCE !== '1' &&
+          !process.argv.includes('--background'),
         webPreferences: {
           preload: path.join(__dirname, 'preload.cjs'),
           contextIsolation: true,
           nodeIntegration: false,
           sandbox: true,
         },
+      });
+      window.on('close', (event) => {
+        if (quitting) return;
+        event.preventDefault();
+        window?.hide();
       });
       window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
       window.webContents.on('will-navigate', (event, url) => {
@@ -284,8 +390,59 @@ if (primary) {
       window.webContents.on('will-redirect', (event, url) => {
         if (!trustedRendererUrl(url, developmentUrl)) event.preventDefault();
       });
-      window.webContents.on('render-process-gone', () => broker.invalidate());
-      window.webContents.on('destroyed', () => broker.invalidate());
+      let rendererRecoveries = 0;
+      let rendererRecoveryTimer: ReturnType<typeof setTimeout> | undefined;
+      const invalidateRenderer = () => {
+        broker.invalidate();
+        void repository.setIdentity(null).catch(() => {});
+        void sync.identityChanged().catch(() => {});
+      };
+      window.webContents.on('render-process-gone', () => {
+        invalidateRenderer();
+        if (quitting || rendererRecoveryTimer) return;
+        const delay = Math.min(
+          30000,
+          1000 * 2 ** Math.min(rendererRecoveries++, 5),
+        );
+        rendererRecoveryTimer = setTimeout(() => {
+          rendererRecoveryTimer = undefined;
+          if (!quitting && window && !window.isDestroyed()) window.reload();
+        }, delay);
+        rendererRecoveryTimer.unref();
+      });
+      window.webContents.on('destroyed', () => {
+        clearTimeout(rendererRecoveryTimer);
+        invalidateRenderer();
+      });
+      const showWindow = () => {
+        if (window?.isMinimized()) window.restore();
+        window?.show();
+        window?.focus();
+      };
+      tray = createDesktopTray(
+        {
+          capture: (mode) => captures!.capture(mode),
+          show: showWindow,
+          openVault: () =>
+            shell.openExternal(new URL('/vault', webOrigin).href),
+          settings: async () => {
+            showWindow();
+            await window?.webContents.executeJavaScript(
+              "location.hash = 'desktop-settings'",
+            );
+          },
+          pause: (paused) => {
+            applySettings({ paused });
+          },
+          quit: () => app.quit(),
+          onError: () => {
+            showWindow();
+          },
+        },
+        settings.get(),
+      );
+      void sync.start().catch(() => {});
+      ocr.wake();
       await window.loadURL(developmentUrl ?? `${rendererOrigin}/index.html`);
     })
     .catch(() => {
@@ -295,4 +452,6 @@ if (primary) {
       app.quit();
     });
 }
-app.on('window-all-closed', () => app.quit());
+app.on('window-all-closed', () => {
+  if (quitting) app.quit();
+});

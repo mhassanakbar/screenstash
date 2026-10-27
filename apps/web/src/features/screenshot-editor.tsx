@@ -32,10 +32,10 @@ export function ScreenshotEditor({ image }: { image: Screenshot }) {
       await cache.invalidateQueries({ queryKey: ['tags', userId] });
     },
   });
-  const inputClass =
-    'mt-2 w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-700';
+  const inputClass = 'field-control';
   return (
-    <section className="mt-6 rounded-xl border border-neutral-200 p-4">
+    <section className="detail-panel" aria-label="Edit screenshot">
+      <h3>Details & tags</h3>
       <form
         onSubmit={(event) => {
           event.preventDefault();
@@ -43,7 +43,7 @@ export function ScreenshotEditor({ image }: { image: Screenshot }) {
           save.mutate();
         }}
       >
-        <label className="text-sm font-medium">
+        <label className="field-label">
           Screenshot title
           <input
             value={title}
@@ -58,13 +58,13 @@ export function ScreenshotEditor({ image }: { image: Screenshot }) {
           />
         </label>
         <fieldset
-          className="mt-4"
+          className="mt-5"
           disabled={save.isPending || tags.isPending || tags.isError}
         >
-          <legend className="text-sm font-medium">Tags</legend>
-          <div className="mt-3 flex flex-wrap gap-4">
+          <legend className="field-label">Tags</legend>
+          <div className="mt-3 flex flex-wrap gap-2">
             {tags.data?.map((tag) => (
-              <label key={tag.id} className="flex items-center gap-2 text-sm">
+              <label key={tag.id} className="tag-choice">
                 <input
                   type="checkbox"
                   checked={selectedTags.includes(tag.id)}
@@ -109,7 +109,7 @@ export function ScreenshotEditor({ image }: { image: Screenshot }) {
           {save.isPending ? 'Saving…' : 'Save changes'}
         </Button>
         {save.isSuccess && (
-          <p role="status" className="mt-3 text-sm text-emerald-700">
+          <p role="status" className="mt-3 text-sm text-[#a33e24]">
             Changes saved.
           </p>
         )}
@@ -125,9 +125,9 @@ export function ScreenshotEditor({ image }: { image: Screenshot }) {
           save.reset();
           create.mutate();
         }}
-        className="mt-5 border-t border-neutral-200 pt-4"
+        className="mt-6 border-t border-[#e5e4df] pt-5"
       >
-        <label className="text-sm font-medium">
+        <label className="field-label">
           New tag
           <input
             value={tagName}

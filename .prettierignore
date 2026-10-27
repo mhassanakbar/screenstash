@@ -8,3 +8,4 @@ dist
 **/next-env.d.ts
 screenstash-spec.md
 screenstash-implementation.md
+apps/desktop/resources/ocr

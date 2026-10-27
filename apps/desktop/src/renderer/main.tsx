@@ -10,6 +10,7 @@ import {
 import { APP_NAME } from '@screenstash/shared';
 import './styles.css';
 import { CaptureWorkspace } from './capture';
+import { Icon } from './icons';
 
 const root = document.getElementById('root');
 if (!root) throw new Error('Renderer root is missing');
@@ -44,12 +45,18 @@ function Authentication() {
     };
   }, [isLoaded, isSignedIn, userId]);
   return (
-    <section className="panel" aria-label="Account">
-      <h2>Account</h2>
-      <p role="status">{state}</p>
+    <section className="account-panel" aria-label="Account">
+      <div className="account-emblem">
+        <Icon name="account" size={22} />
+      </div>
+      <div className="account-copy">
+        <p className="section-kicker">YOUR ACCOUNT</p>
+        <h2>Private vault</h2>
+        <p role="status">{state}</p>
+      </div>
       {isLoaded &&
         (isSignedIn ? (
-          <div className="actions">
+          <div className="actions account-actions">
             <UserButton />
             <button
               onClick={async () => {
@@ -65,7 +72,7 @@ function Authentication() {
             </button>
           </div>
         ) : (
-          <div className="actions">
+          <div className="actions account-actions">
             <SignInButton mode="modal">
               <button>Sign in</button>
             </SignInButton>
@@ -79,21 +86,68 @@ function Authentication() {
 }
 function LocalShell() {
   return (
-    <main>
-      <header>
-        <p className="eyebrow">Your private screenshot workspace</p>
-        <h1>{APP_NAME}</h1>
-        <p>Capture now. Find it later.</p>
-        <button
-          className="secondary"
-          onClick={() => void window.screenstash.openVault()}
-        >
-          Open web vault
-        </button>
-      </header>
-      <CaptureWorkspace />
-      <div id="account-root" />
-    </main>
+    <div className="app-shell">
+      <aside className="sidebar" aria-label="Workspace navigation">
+        <a className="brand" href="#capture">
+          <span className="brand-mark">
+            <Icon name="brand" size={23} />
+          </span>
+          <span>
+            {APP_NAME}
+            <small>DESKTOP WORKSPACE</small>
+          </span>
+        </a>
+        <div className="sidebar-divider" />
+        <p className="sidebar-label">WORKSPACE</p>
+        <nav aria-label="Sections">
+          <a href="#capture">
+            <Icon name="capture" size={18} />
+            Capture
+          </a>
+          <a href="#queue">
+            <Icon name="queue" size={18} />
+            Queue
+          </a>
+          <a href="#desktop-settings">
+            <Icon name="settings" size={18} />
+            Settings
+          </a>
+          <a href="#account">
+            <Icon name="account" size={18} />
+            Account
+          </a>
+        </nav>
+        <div className="sidebar-bottom">
+          <span className="sidebar-bottom-mark">
+            <Icon name="image" size={18} />
+          </span>
+          <p>
+            Keep what matters.
+            <br />
+            <strong>Find it when you need it.</strong>
+          </p>
+        </div>
+      </aside>
+      <main className="workspace">
+        <header className="workspace-header">
+          <div>
+            <p className="eyebrow">SCREENSTASH / DESKTOP</p>
+            <h1>Your capture workspace</h1>
+            <p>Save the moment. Keep the details close.</p>
+          </div>
+          <button
+            className="vault-button secondary"
+            onClick={() => void window.screenstash.openVault()}
+          >
+            Open web vault <Icon name="external" size={16} />
+          </button>
+        </header>
+        <CaptureWorkspace />
+        <div id="account" className="account-section">
+          <div id="account-root" />
+        </div>
+      </main>
+    </div>
   );
 }
 createRoot(root).render(<LocalShell />);
@@ -110,9 +164,15 @@ const mountAccount = () => {
         <Authentication />
       </ClerkProvider>
     ) : (
-      <section className="panel">
-        <h2>Account</h2>
-        <p>Authentication is not configured. Local tools remain available.</p>
+      <section className="account-panel" aria-label="Account">
+        <div className="account-emblem">
+          <Icon name="account" size={22} />
+        </div>
+        <div className="account-copy">
+          <p className="section-kicker">YOUR ACCOUNT</p>
+          <h2>Private vault</h2>
+          <p>Authentication is not configured. Local tools remain available.</p>
+        </div>
       </section>
     ),
   );

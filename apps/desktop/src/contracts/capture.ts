@@ -20,8 +20,28 @@ const captureRecordSchema = z.strictObject({
   sizeBytes: z.number().int().positive(),
   sha256: z.string().regex(/^[a-f0-9]{64}$/),
   identity: identitySchema.nullable(),
-  ocrStatus: z.literal('pending'),
-  uploadStatus: z.literal('pending'),
+  ocrStatus: z.enum(['pending', 'processing', 'complete', 'failed']),
+  ocrText: z.string().max(200000).default(''),
+  ocrTruncated: z.boolean().default(false),
+  ocrError: z.string().max(200).nullable().default(null),
+  uploadStatus: z.enum([
+    'pending',
+    'authorizing',
+    'uploading',
+    'finalizing',
+    'retry_wait',
+    'auth_required',
+    'paused',
+    'failed',
+    'synced',
+  ]),
+  uploadStage: z.enum(['create', 'put', 'finalize']).default('create'),
+  uploadMetadataLocked: z.boolean().default(false),
+  uploadSessionId: z.uuid().nullable().default(null),
+  screenshotId: z.uuid().nullable().default(null),
+  uploadAttempts: z.number().int().nonnegative().default(0),
+  uploadRetryAt: z.iso.datetime().nullable().default(null),
+  uploadError: z.string().max(100).nullable().default(null),
   uploadEligible: z.boolean(),
 });
 export const localCaptureSchema = captureRecordSchema.refine(
@@ -33,10 +53,26 @@ export type LocalCapture = z.infer<typeof localCaptureSchema>;
 export type CaptureIdentity = z.infer<typeof identitySchema>;
 // Strip internal manifest fields when projecting a record for the renderer.
 export const captureSummarySchema = captureRecordSchema
-  .omit({ schemaVersion: true, png: true, sha256: true, identity: true })
+  .omit({
+    schemaVersion: true,
+    png: true,
+    sha256: true,
+    identity: true,
+    ocrText: true,
+    uploadSessionId: true,
+    screenshotId: true,
+  })
   .extend({ assigned: z.boolean() })
   .strip();
 export type CaptureSummary = z.infer<typeof captureSummarySchema>;
+export function isTerminalUploadError(error: string | null): boolean {
+  return [
+    'DELETED',
+    'OWNER_DELETED',
+    'INVALID_IMAGE',
+    'INVALID_PAYLOAD',
+  ].includes(error ?? '');
+}
 export const captureCodeSchema = z.enum([
   'CAPTURE_BUSY',
   'DISPLAY_CHANGED',
